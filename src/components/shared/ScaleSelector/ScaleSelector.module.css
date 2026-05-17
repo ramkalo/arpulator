@@ -1,0 +1,58 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--input-bg);
+  border: var(--input-border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.customRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.input {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--input-bg);
+  border: var(--input-border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.applyBtn {
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--btn-bg);
+  border: var(--btn-border);
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--btn-shadow);
+}
+
+.applyBtn:hover {
+  background: var(--btn-hover);
+}
+
+.intervals {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}

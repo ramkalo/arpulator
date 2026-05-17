@@ -1,0 +1,93 @@
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+  position: relative;
+  user-select: none;
+}
+
+.slot:hover {
+  background: var(--panel-hover);
+}
+
+.slot.selected {
+  background: var(--panel-active);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.slot.compact {
+  padding: 5px 8px;
+}
+
+.handle {
+  font-size: 16px;
+  color: var(--text-dim);
+  cursor: grab;
+  padding: 0 4px;
+  touch-action: none;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.colorBar {
+  width: 4px;
+  height: 32px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.compact .colorBar {
+  height: 20px;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expr {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.removeBtn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.removeBtn:hover {
+  color: #ef4444;
+  background: #450a0a;
+}

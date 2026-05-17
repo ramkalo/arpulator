@@ -1,0 +1,35 @@
+.layout { display: flex; flex-direction: column; gap: 20px; padding: 20px; overflow-y: auto; height: 100%; }
+
+.header { display: flex; flex-direction: column; gap: 6px; }
+
+.nameInput { font-family: var(--font-mono); font-size: 22px; font-weight: 700; background: transparent; border: none; border-bottom: 1px solid var(--border); color: var(--text); padding: 4px 0; }
+.nameInput:focus { outline: none; border-bottom-color: var(--accent); }
+
+.meta { display: flex; gap: 16px; }
+.metaItem { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+.section { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.sectionTitle { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.1em; color: var(--text-dim); text-transform: uppercase; margin: 0; }
+
+.btnRow { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn { padding: 8px 16px; font-family: var(--font-mono); font-size: 12px; background: var(--btn-bg); border: var(--btn-border); border-radius: 4px; color: var(--text); cursor: pointer; box-shadow: var(--btn-shadow); }
+.btn:hover { background: var(--btn-hover); }
+
+.btnAccent { background: #064e3b; border-color: #10b981; color: #6ee7b7; }
+.btnAccent:hover { background: #065f46; }
+
+.itemList { display: flex; flex-direction: column; gap: 6px; }
+
+.item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-left-width: 3px; border-radius: 4px; }
+.item:not([style]) { border-left-color: var(--accent); }
+
+.itemInfo { flex: 1; min-width: 0; }
+.itemName { display: block; font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text); }
+.itemDetail { display: block; font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+.exportBtn { padding: 5px 12px; font-family: var(--font-mono); font-size: 11px; background: var(--btn-bg); border: var(--btn-border); border-radius: 4px; color: var(--text); cursor: pointer; white-space: nowrap; box-shadow: var(--btn-shadow); }
+.exportBtn:hover { background: var(--btn-hover); }
+
+.empty { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); padding: 8px; }

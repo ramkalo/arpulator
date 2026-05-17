@@ -1,0 +1,93 @@
+/* Retro/skeuomorphic dark metal theme */
+
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+
+:root {
+  /* Colors */
+  --bg: #141414;
+  --surface: #1a1a1a;
+  --sidebar-bg: #111111;
+  --panel-bg: #1e1e1e;
+  --panel-hover: #252525;
+  --panel-active: #1a2a1a;
+  --border: #2a2a2a;
+  --text: #e5e5e5;
+  --text-dim: #6b7280;
+  --accent: #f59e0b;
+
+  /* Inputs */
+  --input-bg: #0f0f0f;
+  --input-border: 1px solid #2a2a2a;
+
+  /* Buttons — beveled skeuomorphic style */
+  --btn-bg: linear-gradient(to bottom, #2a2a2a 0%, #1a1a1a 100%);
+  --btn-hover: linear-gradient(to bottom, #333 0%, #222 100%);
+  --btn-border: 1px solid #3a3a3a;
+  --btn-shadow: 2px 2px 0 #000, inset 0 1px 0 #3a3a3a, inset 0 -1px 0 #0a0a0a;
+  --btn-shadow-pressed: inset 2px 2px 4px #000;
+
+  /* Fonts */
+  --font-mono: 'Share Tech Mono', 'Courier New', monospace;
+  --font-display: 'Orbitron', 'Share Tech Mono', monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Brushed metal scanline texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(255, 255, 255, 0.008) 2px,
+    rgba(255, 255, 255, 0.008) 3px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #444; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+select,
+input[type='text'],
+input[type='number'] {
+  color-scheme: dark;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  opacity: 0.5;
+}

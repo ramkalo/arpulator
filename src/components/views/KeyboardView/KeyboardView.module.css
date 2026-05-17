@@ -1,0 +1,120 @@
+.layout { display: flex; flex-direction: column; gap: 20px; padding: 20px; overflow-y: auto; height: 100%; }
+
+.controls { display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap; }
+
+.controlRow { display: flex; flex-direction: column; gap: 4px; }
+
+.label { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.select { font-family: var(--font-mono); font-size: 12px; background: var(--input-bg); border: var(--input-border); color: var(--text); padding: 4px 8px; border-radius: 4px; }
+
+.toggleBtn { font-family: var(--font-mono); font-size: 12px; font-weight: 700; padding: 6px 16px; background: var(--btn-bg); border: var(--btn-border); border-radius: 4px; color: var(--text-dim); cursor: pointer; box-shadow: var(--btn-shadow); letter-spacing: 0.1em; }
+.toggleBtn.on { background: var(--accent); color: #000; box-shadow: 0 0 8px var(--accent); }
+
+.octaveRow { display: flex; align-items: center; gap: 10px; }
+.octaveDisplay { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: var(--accent); }
+.hint { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+.pianoWrap { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; }
+
+.octaveGroup { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.octaveLabel { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+
+.keyGroup { position: relative; }
+
+.whiteKeys { display: flex; gap: 2px; }
+
+.whiteKey {
+  width: 44px;
+  height: 140px;
+  background: linear-gradient(to bottom, #d4d4d4 0%, #f5f5f5 60%, #e8e8e8 100%);
+  border: 1px solid #666;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 6px #00000060, inset 0 1px 0 #ffffff80;
+  position: relative;
+  user-select: none;
+  transition: background 0.05s;
+}
+
+.whiteKey.keyActive {
+  background: linear-gradient(to bottom, var(--accent) 0%, #d97706 100%);
+  box-shadow: 0 2px 4px #00000060, 0 0 12px var(--accent);
+}
+
+.blackKeys {
+  display: flex;
+  gap: 2px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.blackKey {
+  width: 28px;
+  height: 88px;
+  background: linear-gradient(to bottom, #1a1a1a 0%, #2a2a2a 80%, #111 100%);
+  border: 1px solid #000;
+  border-bottom-left-radius: 3px;
+  border-bottom-right-radius: 3px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 5px;
+  cursor: pointer;
+  box-shadow: 0 4px 6px #000000a0, inset 0 1px 0 #ffffff20;
+  position: relative;
+  user-select: none;
+  pointer-events: auto;
+  margin-left: 8px;
+  margin-right: 0;
+  z-index: 1;
+  transition: background 0.05s;
+}
+
+.blackGap {
+  width: 28px;
+  margin-left: 8px;
+  pointer-events: none;
+}
+
+.blackKey.keyActive {
+  background: linear-gradient(to bottom, #92400e 0%, var(--accent) 100%);
+  box-shadow: 0 2px 4px #000000a0, 0 0 10px var(--accent);
+}
+
+.keyLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #374151;
+  pointer-events: none;
+}
+
+.whiteKey.keyActive .keyLabel { color: #000; }
+.blackKey .keyLabel { color: #9ca3af; font-size: 9px; }
+.blackKey.keyActive .keyLabel { color: #000; }
+
+.legend { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; max-width: 400px; }
+.legendTitle { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 10px; }
+.legendGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px 12px; }
+.legendGrid div { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); }
+
+kbd {
+  display: inline-block;
+  background: var(--btn-bg);
+  border: var(--btn-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  box-shadow: var(--btn-shadow);
+  margin-right: 2px;
+}
