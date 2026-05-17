@@ -10,7 +10,7 @@ export function MidiStatus() {
   if (!supported) {
     return (
       <div className={`${styles.banner} ${styles.warning}`}>
-        ⚠ Web MIDI API not supported in this browser — MIDI features disabled. Use Chrome or Edge for full functionality.
+        ⚠ Web MIDI API not supported in this browser — MIDI features disabled. Try Chrome, Edge, or Firefox 108+.
       </div>
     );
   }

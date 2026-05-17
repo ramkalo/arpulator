@@ -37,11 +37,18 @@ function scheduleNote(seq: ScheduledSequence, note: EvaluatedNote, time: number)
   const output = getMidiOutput(seq.midiOutputId);
   if (!output) return;
 
+  const ctx = getAudioContext();
   const durationSec = noteValueToSeconds(seq.noteDuration, seq.bpm);
-  const msTime = time * 1000; // AudioContext time is in seconds, MIDIOutput.send uses ms
 
-  sendNoteOn(output, seq.midiChannel, note.midiNote, note.velocity, msTime);
-  sendNoteOff(output, seq.midiChannel, note.midiNote, msTime + durationSec * 900); // 90% gate
+  // MIDIOutput.send() uses performance.now() ms, but AudioContext.currentTime is in
+  // seconds from a different origin (when the context was created, not page load).
+  // Convert: take how far ahead `time` is from now in AudioContext, apply to perf.now().
+  const perfNow = performance.now();
+  const noteOnMs = perfNow + (time - ctx.currentTime) * 1000;
+  const noteOffMs = noteOnMs + durationSec * 900; // 90% gate
+
+  sendNoteOn(output, seq.midiChannel, note.midiNote, note.velocity, noteOnMs);
+  sendNoteOff(output, seq.midiChannel, note.midiNote, noteOffMs);
 }
 
 function runScheduler() {
@@ -99,23 +106,31 @@ export interface StartSequenceOptions {
 
 export function startSequence(opts: StartSequenceOptions) {
   const ctx = getAudioContext();
-  if (ctx.state === 'suspended') ctx.resume();
 
-  const seq: ScheduledSequence = {
-    id: opts.id,
-    notes: opts.notes,
-    midiOutputId: opts.midiOutputId,
-    midiChannel: opts.midiChannel,
-    bpm: opts.bpm,
-    quantization: opts.quantization,
-    noteDuration: opts.noteDuration,
-    looping: opts.looping,
-    currentStep: opts.startStep ?? 0,
-    nextNoteTime: ctx.currentTime + 0.05, // 50ms start offset
-    onStep: opts.onStep,
+  const begin = () => {
+    const seq: ScheduledSequence = {
+      id: opts.id,
+      notes: opts.notes,
+      midiOutputId: opts.midiOutputId,
+      midiChannel: opts.midiChannel,
+      bpm: opts.bpm,
+      quantization: opts.quantization,
+      noteDuration: opts.noteDuration,
+      looping: opts.looping,
+      currentStep: opts.startStep ?? 0,
+      nextNoteTime: ctx.currentTime + 0.05, // 50ms start offset
+      onStep: opts.onStep,
+    };
+    sequences.set(opts.id, seq);
+    ensureSchedulerRunning();
   };
-  sequences.set(opts.id, seq);
-  ensureSchedulerRunning();
+
+  // ctx.resume() is async — wait for it so ctx.currentTime is valid before scheduling
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(begin);
+  } else {
+    begin();
+  }
 }
 
 export function stopSequence(id: string, midiOutputId?: string, midiChannel?: number) {
