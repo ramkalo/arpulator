@@ -48,8 +48,6 @@
 }
 
 .blackKeys {
-  display: flex;
-  gap: 2px;
   position: absolute;
   top: 0;
   left: 0;
@@ -69,19 +67,11 @@
   padding-bottom: 5px;
   cursor: pointer;
   box-shadow: 0 4px 6px #000000a0, inset 0 1px 0 #ffffff20;
-  position: relative;
+  position: absolute;
   user-select: none;
   pointer-events: auto;
-  margin-left: 8px;
-  margin-right: 0;
   z-index: 1;
   transition: background 0.05s;
-}
-
-.blackGap {
-  width: 28px;
-  margin-left: 8px;
-  pointer-events: none;
 }
 
 .blackKey.keyActive {

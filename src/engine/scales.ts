@@ -24,19 +24,13 @@ export const BUILT_IN_SCALES: ScaleDefinition[] = [
 ];
 
 export function scaleDegreeToMidi(
-  degree: number,          // 0-based, can be negative or very large
+  degree: number,       // 0-based integer; higher = higher pitch, wraps per scale length
   scale: ScaleDefinition,
-  rootNote: number,        // MIDI root, e.g. 60 = C4
-  octaveRange: [number, number]
+  rootNote: number      // MIDI root, e.g. 60 = C4
 ): number {
   const n = scale.intervals.length;
   const octave = Math.floor(degree / n);
   const index = ((degree % n) + n) % n;
-  // Root octave offset: rootNote is already absolute MIDI note
-  const rootOctave = Math.floor(rootNote / 12) - 1;
-  const minOctave = octaveRange[0];
-  const maxOctave = octaveRange[1];
-  const baseOctave = Math.max(minOctave, Math.min(maxOctave, rootOctave + octave));
-  const note = (baseOctave + 1) * 12 + (rootNote % 12) + scale.intervals[index];
+  const note = rootNote + octave * 12 + scale.intervals[index];
   return Math.max(0, Math.min(127, note));
 }

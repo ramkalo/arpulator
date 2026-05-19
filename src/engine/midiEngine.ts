@@ -56,21 +56,23 @@ function enumerateDevices(): { inputs: MidiDevice[]; outputs: MidiDevice[] } {
   const inputs: MidiDevice[] = [];
   const outputs: MidiDevice[] = [];
   midiAccess.inputs.forEach((port) => {
+    if (port.state !== 'connected') return;
     inputs.push({
       id: port.id,
       name: port.name ?? 'Unknown Input',
       manufacturer: port.manufacturer ?? '',
       type: 'input',
-      state: port.state as 'connected' | 'disconnected',
+      state: 'connected',
     });
   });
   midiAccess.outputs.forEach((port) => {
+    if (port.state !== 'connected') return;
     outputs.push({
       id: port.id,
       name: port.name ?? 'Unknown Output',
       manufacturer: port.manufacturer ?? '',
       type: 'output',
-      state: port.state as 'connected' | 'disconnected',
+      state: 'connected',
     });
   });
   return { inputs, outputs };
@@ -85,7 +87,7 @@ export async function initMidi(
   noteCallback = onNote;
 
   try {
-    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    midiAccess = await navigator.requestMIDIAccess({ sysex: true });
   } catch {
     throw new Error('MIDI access denied');
   }

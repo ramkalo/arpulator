@@ -1,20 +1,63 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import type { FunctionDef } from '../../../types';
-import { evaluateFunction } from '../../../engine/functionEval';
+import { sampleFunction, compileExpression, findCrossings } from '../../../engine/functionEval';
 import styles from './Graph.module.css';
 
 interface GraphProps {
   fn: FunctionDef;
-  playheadStep?: number;
+  playheadX?: number;
   playing?: boolean;
   accentColor?: string;
+  onDomainEndChange?: (xEnd: number) => void;
 }
 
-export function Graph({ fn, playheadStep = -1, playing = false, accentColor = '#f59e0b' }: GraphProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const rafRef = useRef<number>(0);
+const GRAPH_SAMPLES = 400;
+const PAD_LEFT = 32;
+const PAD_RIGHT = 12;
+const PAD_Y = 12;
 
-  const draw = useCallback((playhead: number) => {
+export function Graph({ fn, playheadX, playing = false, accentColor = '#f59e0b', onDomainEndChange }: GraphProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number>(0);
+  const dragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
+    active: false, lastX: 0, lastY: 0,
+  });
+  const domainDragRef = useRef(false);
+  // Always-current draw reference so the ResizeObserver can call it without a stale closure
+  const drawRef = useRef<(x: number | undefined) => void>(() => {});
+  // Refs so event handlers always see current values without stale closures
+  const viewRef = useRef({ xMin: 0, xMax: 1, yLo: -8, yHi: 8 });
+  const fnRef = useRef(fn);
+  const onDomainEndChangeRef = useRef(onDomainEndChange);
+  fnRef.current = fn;
+  onDomainEndChangeRef.current = onDomainEndChange;
+
+  const [view, setView] = useState(() => ({
+    xMin: fn.xAxis.domain[0],
+    xMax: fn.xAxis.domain[1] + 5,
+    yLo:  Math.max(-127, fn.yAxis.yViewRange[0]),
+    yHi:  Math.min(127,  fn.yAxis.yViewRange[1]),
+  }));
+
+  // View extends 5 units past the domain end so the user can see what they're cutting off
+  const maxX = fn.xAxis.domain[1] + 5;
+  // Ref so wheel/drag callbacks always see the current value without re-creating
+  const maxXRef = useRef(maxX);
+  maxXRef.current = maxX;
+  viewRef.current = view;
+
+  // Reset view when switching functions
+  useEffect(() => {
+    setView({
+      xMin: fn.xAxis.domain[0],
+      xMax: fn.xAxis.domain[1] + 5,
+      yLo:  Math.max(-127, fn.yAxis.yViewRange[0]),
+      yHi:  Math.min(127,  fn.yAxis.yViewRange[1]),
+    });
+  }, [fn.id]);
+
+  const draw = useCallback((currentX: number | undefined) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -24,131 +67,347 @@ export function Graph({ fn, playheadStep = -1, playing = false, accentColor = '#
     const H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    // Background
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, W, H);
 
-    const result = evaluateFunction(fn);
-    const raw = result.rawValues;
-    if (raw.length === 0) return;
+    const { xMin, xMax, yLo, yHi } = view;
+    const xRange = xMax - xMin || 1;
+    const yRange = yHi - yLo || 1;
 
-    const yMin = Math.min(...raw);
-    const yMax = Math.max(...raw);
-    const yRange = yMax - yMin || 1;
+    const plotW = W - PAD_LEFT - PAD_RIGHT;
+    const plotH = H - PAD_Y * 2;
 
-    const padX = 20;
-    const padY = 20;
-    const plotW = W - padX * 2;
-    const plotH = H - padY * 2;
+    const toCanvasX = (x: number) => PAD_LEFT + ((x - xMin) / xRange) * plotW;
+    const toCanvasY = (y: number) => PAD_Y + plotH - ((y - yLo) / yRange) * plotH;
 
-    // Grid lines
-    ctx.strokeStyle = '#1f2937';
+    // Integer Y grid lines and labels
+    const intLo = Math.ceil(yLo);
+    const intHi = Math.floor(yHi);
+    for (let n = intLo; n <= intHi; n++) {
+      const cy = toCanvasY(n);
+      ctx.strokeStyle = n === 0 ? '#374151' : '#1a2030';
+      ctx.lineWidth = n === 0 ? 1.5 : 1;
+      ctx.beginPath();
+      ctx.moveTo(PAD_LEFT, cy);
+      ctx.lineTo(W - PAD_RIGHT, cy);
+      ctx.stroke();
+
+      ctx.fillStyle = n === 0 ? '#6b7280' : '#374151';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(n), PAD_LEFT - 4, cy + 3);
+    }
+
+    // X-axis tick marks
+    const xRange_ = xMax - xMin;
+    const xTickStep = xRange_ <= 10 ? 1 : xRange_ <= 50 ? 5 : Math.ceil(xRange_ / 10);
+    const xTickStart = Math.ceil(xMin / xTickStep) * xTickStep;
+    ctx.strokeStyle = '#1a2030';
     ctx.lineWidth = 1;
-    const gridLines = 8;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = padY + (i / gridLines) * plotH;
+    for (let tx = xTickStart; tx <= xMax; tx += xTickStep) {
+      const cx = toCanvasX(tx);
       ctx.beginPath();
-      ctx.moveTo(padX, y);
-      ctx.lineTo(W - padX, y);
-      ctx.stroke();
-    }
-    for (let i = 0; i <= fn.xAxis.stepsPerCycle; i++) {
-      const x = padX + (i / fn.xAxis.stepsPerCycle) * plotW;
-      ctx.beginPath();
-      ctx.moveTo(x, padY);
-      ctx.lineTo(x, H - padY);
+      ctx.moveTo(cx, PAD_Y);
+      ctx.lineTo(cx, H - PAD_Y);
       ctx.stroke();
     }
 
-    // Curve
-    ctx.beginPath();
-    ctx.strokeStyle = accentColor + '80';
-    ctx.lineWidth = 1.5;
-    raw.forEach((y, i) => {
-      const px = padX + (i / (raw.length - 1 || 1)) * plotW;
-      const py = padY + plotH - ((y - yMin) / yRange) * plotH;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    });
-    ctx.stroke();
-
-    // Note dots
-    result.notes.forEach((note, i) => {
-      const y = raw[i];
-      const px = padX + (fn.xAxis.stepsPerCycle <= 1 ? 0 : i / (fn.xAxis.stepsPerCycle - 1)) * plotW;
-      const py = padY + plotH - ((y - yMin) / yRange) * plotH;
-
-      const isActive = i === playhead;
-      ctx.beginPath();
-      ctx.arc(px, py, isActive ? 6 : 4, 0, Math.PI * 2);
-      ctx.fillStyle = isActive ? '#ffffff' : accentColor;
-      ctx.fill();
-
-      // MIDI note label on active
-      if (isActive) {
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(midiNoteToName(note.midiNote), px, py - 10);
-      }
-    });
-
-    // Playhead
-    if (playhead >= 0 && fn.xAxis.stepsPerCycle > 1) {
-      const px = padX + (playhead / (fn.xAxis.stepsPerCycle - 1)) * plotW;
-      ctx.beginPath();
-      ctx.strokeStyle = '#ffffff40';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.moveTo(px, padY);
-      ctx.lineTo(px, H - padY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // Error overlay
-    if (result.error) {
+    // Compile and sample — always sample across the full fn domain, not just view
+    const { compiled, error } = compileExpression(fn.expression);
+    if (error || !compiled) {
       ctx.fillStyle = '#ef444480';
       ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = '#ef4444';
       ctx.font = '12px monospace';
       ctx.textAlign = 'center';
       ctx.fillText('Expression error', W / 2, H / 2);
+      return;
     }
-  }, [fn, accentColor]);
 
-  // Redraw when fn changes or not playing
+    const samples = sampleFunction(compiled, xMin, xMax, GRAPH_SAMPLES);
+
+    // Draw curve
+    ctx.beginPath();
+    ctx.strokeStyle = accentColor + '80';
+    ctx.lineWidth = 1.5;
+    let penDown = false;
+    for (const pt of samples) {
+      if (!isFinite(pt.y)) { penDown = false; continue; }
+      const cx = toCanvasX(pt.x);
+      const cy = toCanvasY(pt.y);
+      if (!penDown) { ctx.moveTo(cx, cy); penDown = true; }
+      else ctx.lineTo(cx, cy);
+    }
+    ctx.stroke();
+
+    // Dark overlay for inactive region past domain end
+    const domainEnd = fn.xAxis.domain[1];
+    const domainEndCx = toCanvasX(domainEnd);
+    if (domainEndCx < W - PAD_RIGHT) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.fillRect(domainEndCx, PAD_Y, W - PAD_RIGHT - domainEndCx, plotH);
+    }
+
+    // Crossing dots — clipped to active domain only
+    const crossingEvents = findCrossings(compiled, xMin, Math.min(xMax, domainEnd), GRAPH_SAMPLES);
+    const drawnDots = new Set<string>();
+    for (const ev of crossingEvents) {
+      const crossedInt = Math.max(ev.fromDegree, ev.toDegree);
+      const cx = toCanvasX(ev.x);
+      const cy = toCanvasY(crossedInt);
+      const key = `${Math.round(cx)},${Math.round(cy)}`;
+      if (drawnDots.has(key)) continue;
+      drawnDots.add(key);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = accentColor;
+      ctx.fill();
+    }
+
+    // Playhead vertical line
+    if (currentX !== undefined) {
+      const cx = toCanvasX(currentX);
+      if (cx >= PAD_LEFT && cx <= W - PAD_RIGHT) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffffff50';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.moveTo(cx, PAD_Y);
+        ctx.lineTo(cx, H - PAD_Y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        try {
+          const curY = compiled.evaluate({ x: currentX });
+          if (isFinite(curY)) {
+            const cy = toCanvasY(curY);
+            ctx.beginPath();
+            ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(curY.toFixed(2), cx + 8, cy + 4);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Domain end marker — draggable vertical boundary
+    const domCx = toCanvasX(domainEnd);
+    if (domCx >= PAD_LEFT && domCx <= W - PAD_RIGHT) {
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(domCx, PAD_Y);
+      ctx.lineTo(domCx, H - PAD_Y);
+      ctx.stroke();
+      // Triangle handle at top
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.moveTo(domCx - 5, PAD_Y);
+      ctx.lineTo(domCx + 5, PAD_Y);
+      ctx.lineTo(domCx, PAD_Y + 9);
+      ctx.closePath();
+      ctx.fill();
+      // X value label
+      ctx.fillStyle = accentColor;
+      ctx.font = '9px monospace';
+      ctx.textAlign = domCx > W - PAD_RIGHT - 30 ? 'right' : 'left';
+      ctx.fillText(String(domainEnd), domCx + (domCx > W - PAD_RIGHT - 30 ? -6 : 6), PAD_Y + 20);
+    }
+  }, [fn, accentColor, view]);
+
+  drawRef.current = draw;
+
+  // Keep canvas pixel dimensions in sync with its container
   useEffect(() => {
-    if (!playing) {
-      draw(playheadStep);
-    }
-  }, [fn, playing, playheadStep, draw]);
+    const wrapper = wrapperRef.current;
+    const canvas = canvasRef.current;
+    if (!wrapper || !canvas) return;
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (!width || !height) return;
+      canvas.width = Math.round(width);
+      canvas.height = Math.round(height);
+      drawRef.current(undefined);
+    });
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
 
-  // Animation loop during playback
+  useEffect(() => {
+    if (!playing) draw(playheadX);
+  }, [fn, playing, playheadX, draw]);
+
   useEffect(() => {
     if (!playing) return;
-    let currentStep = playheadStep;
-
     const loop = () => {
-      draw(currentStep);
+      draw(playheadX);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [playing, draw, playheadStep]);
+  }, [playing, draw, playheadX]);
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    const plotW = canvas.width - PAD_LEFT - PAD_RIGHT;
+    const plotH = canvas.height - PAD_Y * 2;
+    const mx = maxXRef.current;
+
+    setView(v => {
+      const dx = v.xMin + ((cx - PAD_LEFT) / plotW) * (v.xMax - v.xMin);
+      const dy = v.yLo + (1 - (cy - PAD_Y) / plotH) * (v.yHi - v.yLo);
+      const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+      const newXMin = Math.max(0, dx - (dx - v.xMin) * factor);
+      const newXMax = Math.min(dx + (v.xMax - dx) * factor, mx);
+      const newYLo  = Math.max(-127, dy - (dy - v.yLo) * factor);
+      const newYHi  = Math.min(127,  dy + (v.yHi - dy) * factor);
+      return { xMin: newXMin, xMax: newXMax, yLo: newYLo, yHi: newYHi };
+    });
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const v = viewRef.current;
+    const plotW = canvas.width - PAD_LEFT - PAD_RIGHT;
+    const xRange = v.xMax - v.xMin || 1;
+    const domainEnd = fnRef.current.xAxis.domain[1];
+    const domCx = PAD_LEFT + ((domainEnd - v.xMin) / xRange) * plotW;
+
+    if (Math.abs(cx - domCx) <= 8) {
+      domainDragRef.current = true;
+      canvas.style.cursor = 'col-resize';
+      return;
+    }
+    dragRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
+    canvas.style.cursor = 'grabbing';
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const plotW = canvas.width - PAD_LEFT - PAD_RIGHT;
+    const plotH = canvas.height - PAD_Y * 2;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const v = viewRef.current;
+    const xRange = v.xMax - v.xMin || 1;
+
+    // Domain end drag
+    if (domainDragRef.current) {
+      const globalMax = 60;
+      const xVal = v.xMin + ((cx - PAD_LEFT) / plotW) * xRange;
+      const snapped = Math.max(1, Math.min(globalMax, Math.round(xVal)));
+      onDomainEndChangeRef.current?.(snapped);
+      maxXRef.current = snapped + 5;
+      setView(prev => ({ ...prev, xMax: snapped + 5 }));
+      return;
+    }
+
+    // Update cursor based on proximity to domain end line
+    if (!dragRef.current.active) {
+      const domainEnd = fnRef.current.xAxis.domain[1];
+      const domCx = PAD_LEFT + ((domainEnd - v.xMin) / xRange) * plotW;
+      canvas.style.cursor = Math.abs(cx - domCx) <= 8 ? 'col-resize' : 'grab';
+    }
+
+    // Pan
+    const d = dragRef.current;
+    if (!d.active) return;
+    const dx = (e.clientX - d.lastX) * scaleX;
+    const dy = (e.clientY - d.lastY) * scaleY;
+    dragRef.current.lastX = e.clientX;
+    dragRef.current.lastY = e.clientY;
+
+    const mx = maxXRef.current;
+    setView(prev => {
+      const xShift = -(dx / plotW) * (prev.xMax - prev.xMin);
+      const yShift =  (dy / plotH) * (prev.yHi - prev.yLo);
+      let newXMin = prev.xMin + xShift;
+      let newXMax = prev.xMax + xShift;
+      if (newXMax > mx) { newXMin -= (newXMax - mx); newXMax = mx; }
+      if (newXMin < 0)  { newXMax -= newXMin; newXMax = Math.min(newXMax, mx); newXMin = 0; }
+      let newYLo = prev.yLo + yShift;
+      let newYHi = prev.yHi + yShift;
+      if (newYHi > 127)  { newYLo -= (newYHi - 127); newYHi = 127; }
+      if (newYLo < -127) { newYHi -= (newYLo + 127); newYHi = Math.min(newYHi, 127); newYLo = -127; }
+      return { xMin: newXMin, xMax: newXMax, yLo: newYLo, yHi: newYHi };
+    });
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    dragRef.current.active = false;
+    domainDragRef.current = false;
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grab';
+  }, []);
+  const handleMouseLeave = useCallback(() => {
+    dragRef.current.active = false;
+    domainDragRef.current = false;
+    if (canvasRef.current) canvasRef.current.style.cursor = 'grab';
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    setView({
+      xMin: fn.xAxis.domain[0],
+      xMax: fn.xAxis.domain[1] + 5,
+      yLo:  Math.max(-127, fn.yAxis.yViewRange[0]),
+      yHi:  Math.min(127,  fn.yAxis.yViewRange[1]),
+    });
+  }, [fn]);
+
+  const handleAutoZoom = useCallback(() => {
+    const { compiled, error } = compileExpression(fn.expression);
+    if (error || !compiled) return;
+
+    const [xDomainMin, xDomainMax] = fn.xAxis.domain;
+    const samples = sampleFunction(compiled, xDomainMin, xDomainMax, 1000);
+    const finiteYs = samples.map(p => p.y).filter(isFinite);
+    if (finiteYs.length === 0) return;
+
+    const yMin = Math.min(...finiteYs);
+    const yMax = Math.max(...finiteYs);
+    const yRange = yMax - yMin || 2;
+    const pad = yRange * 0.05;
+    const xPad = (xDomainMax - xDomainMin) * 0.05;
+
+    setView({
+      xMin: xDomainMin,
+      xMax: xDomainMax + 5,
+      yLo:  Math.max(-127, yMin - pad),
+      yHi:  Math.min(127,  yMax + pad),
+    });
+  }, [fn]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className={styles.canvas}
-      width={600}
-      height={300}
-    />
+    <div ref={wrapperRef} className={styles.wrapper}>
+      <canvas
+        ref={canvasRef}
+        className={styles.canvas}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onDoubleClick={handleDoubleClick}
+      />
+      <button className={styles.autoBtn} onClick={handleAutoZoom} title="Fit to function">⊡</button>
+      <button className={styles.resetBtn} onClick={handleDoubleClick} title="Reset view">⌖</button>
+    </div>
   );
-}
-
-function midiNoteToName(midi: number): string {
-  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  const octave = Math.floor(midi / 12) - 1;
-  return names[midi % 12] + octave;
 }

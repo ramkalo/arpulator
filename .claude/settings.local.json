@@ -4,7 +4,8 @@
       "Bash(Get-ChildItem -Force \"D:\\\\Documents\\\\REPOS\\\\arpulator\")",
       "Bash(Select-Object Name, Attributes)",
       "Bash(npm create *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

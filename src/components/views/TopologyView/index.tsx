@@ -78,7 +78,7 @@ export function TopologyView() {
             <div key={fn.id} className={styles.item} style={{ borderLeftColor: fn.color }}>
               <div className={styles.itemInfo}>
                 <span className={styles.itemName}>{fn.name}</span>
-                <span className={styles.itemDetail}>{fn.expression} · {fn.xAxis.stepsPerCycle} steps · {fn.xAxis.quantization}</span>
+                <span className={styles.itemDetail}>{fn.expression} · {fn.oneShotDuration}</span>
               </div>
               <button
                 className={styles.exportBtn}

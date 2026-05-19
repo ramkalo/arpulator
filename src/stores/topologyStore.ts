@@ -24,18 +24,16 @@ function makeDefaultFunction(index: number): FunctionDef {
     name: `Function ${index + 1}`,
     expression: 'sin(x)',
     xAxis: {
-      quantization: 'sixteenth',
-      domain: [0, 6.28],
-      stepsPerCycle: 16,
+      domain: [0, 6],
     },
     yAxis: {
       scale: BUILT_IN_SCALES[0],
       rootNote: 60,
-      octaveRange: [3, 5],
+      yViewRange: [-8, 8],
     },
+    oneShotDuration: 'eighth',
     midiChannel: 1,
     velocity: 100,
-    noteDuration: 'sixteenth',
     color: DEFAULT_FUNCTION_COLORS[index % DEFAULT_FUNCTION_COLORS.length],
   };
 }
@@ -271,6 +269,33 @@ export const useTopologyStore = create<TopologyStore>()(
           })),
       };
     },
-    { name: 'arpulator-topology' }
+    {
+      name: 'arpulator-topology',
+      version: 5,
+      migrate: (state: unknown) => {
+        const s = state as { topology?: Topology };
+        if (!s?.topology) return state;
+        const fns = s.topology.functions.map((fn) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const f = fn as any;
+          const rawDomain = f.xAxis?.domain ?? [0, 6];
+          const rawYView = f.yAxis?.yViewRange ?? [-8, 8];
+          return {
+            ...fn,
+            xAxis: {
+              domain: [0, Math.max(1, Math.min(60, Math.round(rawDomain[1])))] as [number, number],
+            },
+            yAxis: {
+              scale: f.yAxis?.scale ?? BUILT_IN_SCALES[0],
+              rootNote: f.yAxis?.rootNote ?? 60,
+              yViewRange: [Math.max(-127, rawYView[0]), Math.min(127, rawYView[1])] as [number, number],
+            },
+            oneShotDuration: f.oneShotDuration ?? f.noteDuration ?? 'eighth',
+            color: f.color ?? '#f59e0b',
+          };
+        });
+        return { ...s, topology: { ...s.topology, functions: fns } };
+      },
+    }
   )
 );

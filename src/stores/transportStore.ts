@@ -6,7 +6,7 @@ interface TransportStore {
   looping: boolean;
   externalClockActive: boolean;
   currentBpm: number;
-  playheadStep: number;
+  playheadX: number;           // current X position (for graph animation)
 
   play: () => void;
   pause: () => void;
@@ -14,7 +14,7 @@ interface TransportStore {
   toggleLoop: () => void;
   setBpm: (bpm: number) => void;
   setExternalClock: (active: boolean, bpm?: number) => void;
-  setPlayheadStep: (step: number) => void;
+  setPlayheadX: (x: number) => void;
 }
 
 export const useTransportStore = create<TransportStore>()((set) => ({
@@ -23,11 +23,11 @@ export const useTransportStore = create<TransportStore>()((set) => ({
   looping: true,
   externalClockActive: false,
   currentBpm: 120,
-  playheadStep: 0,
+  playheadX: 0,
 
   play: () => set({ playing: true, paused: false }),
   pause: () => set((s) => ({ playing: false, paused: s.playing })),
-  stop: () => set({ playing: false, paused: false, playheadStep: 0 }),
+  stop: () => set({ playing: false, paused: false, playheadX: 0 }),
   toggleLoop: () => set((s) => ({ looping: !s.looping })),
   setBpm: (bpm) => set({ currentBpm: Math.max(20, Math.min(300, bpm)) }),
   setExternalClock: (active, bpm) =>
@@ -35,5 +35,5 @@ export const useTransportStore = create<TransportStore>()((set) => ({
       externalClockActive: active,
       currentBpm: bpm !== undefined ? bpm : s.currentBpm,
     })),
-  setPlayheadStep: (step) => set({ playheadStep: step }),
+  setPlayheadX: (x) => set({ playheadX: x }),
 }));

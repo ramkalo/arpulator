@@ -61,9 +61,10 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 16px;
   gap: 12px;
+  min-height: 0;
 }
 
 .topBar {
@@ -101,11 +102,31 @@
 
 .actionBtn:hover { background: var(--btn-hover); }
 
+.contentRow {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
 .graphWrap {
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
   background: #0a0a0a;
+  flex: 3;
+  min-height: 260px;
+  min-width: 0;
+}
+
+.controlsPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  min-width: 0;
 }
 
 .exprRow {
@@ -131,8 +152,8 @@
 .error { color: #ef4444; font-size: 18px; }
 
 .settingsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -189,6 +210,22 @@
 }
 
 .row { display: flex; align-items: center; gap: 6px; }
+
+.modeBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+  background: var(--btn-bg);
+  border: var(--btn-border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  box-shadow: var(--btn-shadow);
+}
+.modeBtn:hover { background: var(--btn-hover); }
+.modeBtnActive { background: var(--accent) !important; color: #000 !important; box-shadow: 0 0 8px var(--accent) !important; }
 
 .slider { flex: 1; accent-color: var(--accent); }
 .sliderVal { font-family: var(--font-mono); font-size: 12px; color: var(--text); min-width: 30px; }

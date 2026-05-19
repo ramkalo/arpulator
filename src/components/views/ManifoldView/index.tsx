@@ -3,62 +3,60 @@ import { useTopologyStore } from '../../../stores/topologyStore';
 import { useMidiStore } from '../../../stores/midiStore';
 import { useTransportStore } from '../../../stores/transportStore';
 import { Transport } from '../../shared/Transport';
-import { evaluateFunction } from '../../../engine/functionEval';
+import { compileExpression } from '../../../engine/functionEval';
 import { startSequence, stopAllSequences } from '../../../engine/arpEngine';
 import styles from './ManifoldView.module.css';
 
 export function ManifoldView() {
   const { topology, setManifoldRow, clearManifoldRow, setGlobalTempo } = useTopologyStore();
   const { selectedOutputId } = useMidiStore();
-  const { playing, currentBpm, looping, play, pause, stop, setPlayheadStep } = useTransportStore();
+  const { playing, currentBpm, looping, play, pause, stop } = useTransportStore();
 
   const [dragOver, setDragOver] = useState<number | null>(null);
 
-  const buildRowNotes = useCallback((row: typeof topology.manifold[0]) => {
+  const startRowSequence = useCallback((row: typeof topology.manifold[0], seqIdSuffix: string) => {
+    if (!selectedOutputId) return;
+    const startFn = (fn: typeof topology.functions[0], seqId: string) => {
+      const { compiled, error } = compileExpression(fn.expression);
+      if (error || !compiled) return;
+      startSequence({
+        id: seqId,
+        expression: fn.expression,
+        compiled,
+        midiOutputId: selectedOutputId,
+        midiChannel: row.midiChannel,
+        bpm: currentBpm,
+        domain: fn.xAxis.domain,
+        looping,
+        oneShotDuration: fn.oneShotDuration,
+        velocity: fn.velocity,
+        scale: fn.yAxis.scale,
+        rootNote: fn.yAxis.rootNote,
+      });
+    };
+
     if (row.itemType === 'function') {
       const fn = topology.functions.find((f) => f.id === row.itemId);
-      if (!fn) return { notes: [], quantization: 'sixteenth', noteDuration: 'sixteenth' };
-      const result = evaluateFunction(fn);
-      return { notes: result.notes, quantization: fn.xAxis.quantization, noteDuration: fn.noteDuration };
-    }
-    if (row.itemType === 'chain') {
+      if (fn) startFn(fn, `manifold-${seqIdSuffix}`);
+    } else if (row.itemType === 'chain') {
       const chain = topology.chains.find((c) => c.id === row.itemId);
-      if (!chain) return { notes: [], quantization: 'sixteenth', noteDuration: 'sixteenth' };
-      const all: ReturnType<typeof evaluateFunction>['notes'] = [];
-      let quantization = 'sixteenth';
-      let noteDuration = 'sixteenth';
-      for (const fnId of chain.functionIds) {
-        const fn = topology.functions.find((f) => f.id === fnId);
-        if (!fn) continue;
-        quantization = fn.xAxis.quantization;
-        noteDuration = fn.noteDuration;
-        all.push(...evaluateFunction(fn).notes);
+      if (chain) {
+        chain.functionIds.forEach((fnId, i) => {
+          const fn = topology.functions.find((f) => f.id === fnId);
+          if (fn) startFn(fn, `manifold-${seqIdSuffix}-${i}`);
+        });
       }
-      return { notes: all, quantization, noteDuration };
     }
-    return { notes: [], quantization: 'sixteenth', noteDuration: 'sixteenth' };
-  }, [topology]);
+  }, [topology, selectedOutputId, currentBpm, looping]);
 
   const handlePlay = useCallback(() => {
     if (!selectedOutputId) return;
     for (const row of topology.manifold) {
       if (row.itemType === 'empty' || !row.itemId) continue;
-      const { notes, quantization, noteDuration } = buildRowNotes(row);
-      if (notes.length === 0) continue;
-      startSequence({
-        id: `manifold-ch${row.midiChannel}`,
-        notes,
-        midiOutputId: selectedOutputId,
-        midiChannel: row.midiChannel,
-        bpm: currentBpm,
-        quantization,
-        noteDuration,
-        looping,
-        onStep: (step) => setPlayheadStep(step),
-      });
+      startRowSequence(row, `ch${row.midiChannel}`);
     }
     play();
-  }, [topology, selectedOutputId, currentBpm, looping, buildRowNotes, play, setPlayheadStep]);
+  }, [topology, selectedOutputId, startRowSequence, play]);
 
   const handlePause = useCallback(() => {
     stopAllSequences(selectedOutputId ?? undefined);

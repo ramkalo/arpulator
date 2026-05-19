@@ -1,14 +1,21 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useKeyboard } from '../../../hooks/useKeyboard';
 import { useMidiStore } from '../../../stores/midiStore';
 import styles from './KeyboardView.module.css';
 
-// Two-octave white/black key layout
 const WHITE_NOTES = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
-const BLACK_NOTES = [1, 3, -1, 6, 8, 10, -1]; // C# D# - F# G# A# -
+// White key: 44px wide, 2px gap → 46px step. Black key: 28px wide (half = 14px).
+// left = midpoint between adjacent white key centers, minus half black key width.
+const BLACK_KEY_POSITIONS = [
+  { semitone: 1,  left: 31  }, // C#
+  { semitone: 3,  left: 77  }, // D#
+  { semitone: 6,  left: 169 }, // F#
+  { semitone: 8,  left: 215 }, // G#
+  { semitone: 10, left: 261 }, // A#
+];
 
 const QWERTY_WHITE = ['A', 'S', 'D', 'F', 'G', 'H', 'J'];
-const QWERTY_BLACK = ['W', 'E', '', 'T', 'Y', 'U', ''];
+const QWERTY_BLACK_KEYS = ['W', 'E', 'T', 'Y', 'U'];
 
 function Key({
   semitone,
@@ -16,17 +23,20 @@ function Key({
   qwerty,
   isActive,
   baseOctave,
+  style,
 }: {
   semitone: number;
   isBlack: boolean;
   qwerty: string;
   isActive: boolean;
   baseOctave: number;
+  style?: React.CSSProperties;
 }) {
   const midiNote = baseOctave * 12 + semitone;
   return (
     <div
       className={`${isBlack ? styles.blackKey : styles.whiteKey} ${isActive ? styles.keyActive : ''}`}
+      style={style}
       title={`MIDI ${midiNote}`}
     >
       <span className={styles.keyLabel}>{qwerty}</span>
@@ -97,15 +107,15 @@ export function KeyboardView() {
                 </div>
                 {/* Black keys */}
                 <div className={styles.blackKeys}>
-                  {BLACK_NOTES.map((semitone, i) => {
-                    if (semitone === -1) return <div key={i} className={styles.blackGap} />;
+                  {BLACK_KEY_POSITIONS.map(({ semitone, left }, i) => {
                     const midi = baseOctave * 12 + semitone;
                     return (
                       <Key
                         key={i}
                         semitone={semitone}
                         isBlack
-                        qwerty={relOct === 0 ? QWERTY_BLACK[i] : (i === 0 ? 'O' : '')}
+                        style={{ left }}
+                        qwerty={relOct === 0 ? QWERTY_BLACK_KEYS[i] : (i === 0 ? 'O' : '')}
                         isActive={activeNotes.has(midi)}
                         baseOctave={baseOctave}
                       />

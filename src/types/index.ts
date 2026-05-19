@@ -16,15 +16,13 @@ export interface ScaleDefinition {
 }
 
 export interface XAxisConfig {
-  quantization: NoteValue;
-  domain: [number, number];   // x range to evaluate
-  stepsPerCycle: number;      // number of x samples per loop
+  domain: [number, number];   // x range to evaluate / display, in seconds
 }
 
 export interface YAxisConfig {
   scale: ScaleDefinition;
   rootNote: number;             // MIDI note 0-127 (root of scale, e.g. 60 = C4)
-  octaveRange: [number, number]; // e.g. [3, 5] — octaves 3 through 5
+  yViewRange: [number, number]; // integer range displayed on the graph y-axis, e.g. [-8, 8]
 }
 
 export interface FunctionDef {
@@ -33,9 +31,9 @@ export interface FunctionDef {
   expression: string;          // math.js expression, x is the free variable
   xAxis: XAxisConfig;
   yAxis: YAxisConfig;
+  oneShotDuration: NoteValue;  // gate duration
   midiChannel: number;         // 1-16
   velocity: number;            // 0-127
-  noteDuration: NoteValue;
   color: string;               // hex color for UI differentiation
 }
 
@@ -77,11 +75,18 @@ export interface TransportState {
   looping: boolean;
   externalClockActive: boolean;
   currentBpm: number;
-  playheadStep: number;        // current step index (for graph animation)
+  playheadX: number;           // current X position (for graph animation)
 }
 
-export interface EvaluatedNote {
-  midiNote: number;
-  stepIndex: number;
-  velocity: number;
+// A crossing event: the function crossed an integer boundary at this X
+export interface CrossingEvent {
+  x: number;
+  fromDegree: number;
+  toDegree: number;
+}
+
+// A raw sample point for graph rendering
+export interface SamplePoint {
+  x: number;
+  y: number;
 }

@@ -21,7 +21,7 @@ import { useMidiStore } from '../../../stores/midiStore';
 import { useTransportStore } from '../../../stores/transportStore';
 import { FunctionSlot } from '../../shared/FunctionSlot';
 import { Transport } from '../../shared/Transport';
-import { evaluateFunction } from '../../../engine/functionEval';
+import { compileExpression } from '../../../engine/functionEval';
 import { startSequence, stopSequence } from '../../../engine/arpEngine';
 import type { FunctionDef } from '../../../types';
 import styles from './ChainView.module.css';
@@ -48,7 +48,7 @@ function SortableFunctionSlot({ fn, chainId, index }: { fn: FunctionDef; chainId
 export function ChainView() {
   const { topology, activeChainId, setActiveChainId, addChain, duplicateChain, deleteChain, updateChain, addFunctionToChain, reorderChainFunctions } = useTopologyStore();
   const { selectedOutputId } = useMidiStore();
-  const { paused, currentBpm, looping, play, pause, stop, setPlayheadStep, playheadStep } = useTransportStore();
+  const { currentBpm, looping, play, pause, stop } = useTransportStore();
 
   const chain = topology.chains.find((c) => c.id === activeChainId) ?? topology.chains[0];
   const [showPicker, setShowPicker] = useState(false);
@@ -59,42 +59,44 @@ export function ChainView() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  const buildChainNotes = useCallback(() => {
-    if (!chain) return [];
-    const all: ReturnType<typeof evaluateFunction>['notes'] = [];
-    for (const fnId of chain.functionIds) {
-      const fn = topology.functions.find((f) => f.id === fnId);
-      if (!fn) continue;
-      const result = evaluateFunction(fn);
-      all.push(...result.notes.map((n) => ({ ...n })));
-    }
-    return all;
-  }, [chain, topology.functions]);
-
+  // Chains play each function as a parallel continuous sequence on the preview channel.
   const handlePlay = useCallback(() => {
     if (!chain || !selectedOutputId) return;
-    const notes = buildChainNotes();
-    if (notes.length === 0) return;
-    const fn = topology.functions.find((f) => f.id === chain.functionIds[0]);
-    startSequence({
-      id: SEQ_ID,
-      notes,
-      midiOutputId: selectedOutputId,
-      midiChannel: previewChannel,
-      bpm: currentBpm,
-      quantization: fn?.xAxis.quantization ?? 'sixteenth',
-      noteDuration: fn?.noteDuration ?? 'sixteenth',
-      looping,
-      startStep: paused ? playheadStep : 0,
-      onStep: (step) => setPlayheadStep(step),
+    chain.functionIds.forEach((fnId, i) => {
+      const fn = topology.functions.find((f) => f.id === fnId);
+      if (!fn) return;
+      const { compiled, error } = compileExpression(fn.expression);
+      if (error || !compiled) return;
+      startSequence({
+        id: `${SEQ_ID}-${i}`,
+        expression: fn.expression,
+        compiled,
+        midiOutputId: selectedOutputId,
+        midiChannel: previewChannel,
+        bpm: currentBpm,
+        domain: fn.xAxis.domain,
+        looping,
+        oneShotDuration: fn.oneShotDuration,
+        velocity: fn.velocity,
+        scale: fn.yAxis.scale,
+        rootNote: fn.yAxis.rootNote,
+      });
     });
     play();
-  }, [chain, selectedOutputId, buildChainNotes, previewChannel, currentBpm, looping, paused, playheadStep, play, setPlayheadStep, topology.functions]);
+  }, [chain, selectedOutputId, topology.functions, previewChannel, currentBpm, looping, play]);
 
-  const handlePause = useCallback(() => { stopSequence(SEQ_ID, selectedOutputId ?? undefined); pause(); }, [selectedOutputId, pause]);
-  const handleStop = useCallback(() => { stopSequence(SEQ_ID, selectedOutputId ?? undefined); stop(); }, [selectedOutputId, stop]);
+  const stopAll = useCallback(() => {
+    if (!chain) return;
+    chain.functionIds.forEach((_, i) => stopSequence(`${SEQ_ID}-${i}`, selectedOutputId ?? undefined, previewChannel));
+  }, [chain, selectedOutputId, previewChannel]);
 
-  useEffect(() => () => { stopSequence(SEQ_ID); }, []);
+  const handlePause = useCallback(() => { stopAll(); pause(); }, [stopAll, pause]);
+  const handleStop = useCallback(() => { stopAll(); stop(); }, [stopAll, stop]);
+
+  useEffect(() => () => {
+    // cleanup all possible chain slot IDs
+    for (let i = 0; i < 16; i++) stopSequence(`${SEQ_ID}-${i}`);
+  }, []);
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!chain) return;
