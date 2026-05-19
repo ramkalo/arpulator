@@ -263,3 +263,11 @@ export function getCurrentX(id: string): number | null {
   if (!seq) return null;
   return audioTimeToX(getAudioContext().currentTime, seq);
 }
+
+export function updateSequenceExpression(id: string, compiled: unknown) {
+  const seq = sequences.get(id);
+  if (!seq) return;
+  const ctx = getAudioContext();
+  seq.compiled = compiled;
+  seq.scheduledUpTo = ctx.currentTime; // reschedule immediately with new expression
+}

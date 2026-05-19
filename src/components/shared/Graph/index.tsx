@@ -384,8 +384,6 @@ export function Graph({ fn, playheadX, playing = false, accentColor = '#f59e0b',
     const yMax = Math.max(...finiteYs);
     const yRange = yMax - yMin || 2;
     const pad = yRange * 0.05;
-    const xPad = (xDomainMax - xDomainMin) * 0.05;
-
     setView({
       xMin: xDomainMin,
       xMax: xDomainMax + 5,

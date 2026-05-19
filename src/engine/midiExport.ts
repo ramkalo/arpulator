@@ -18,6 +18,7 @@ function exportFunctionToTrack(
 ): number {
   const track = midi.addTrack();
   track.name = trackName;
+  track.channel = midiChannel - 1;
 
   const { compiled, error } = compileExpression(fn.expression);
   if (error || !compiled) return 0;
@@ -40,7 +41,6 @@ function exportFunctionToTrack(
       time: startSec,
       duration: Math.max(0.02, durSec),
       velocity: fn.velocity / 127,
-      channel: midiChannel - 1,
     });
   });
 

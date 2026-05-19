@@ -151,6 +151,23 @@
 
 .error { color: #ef4444; font-size: 18px; }
 
+.applyBtn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: #000;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.applyBtn:hover { filter: brightness(1.15); }
+.applyBtn:active { filter: brightness(0.9); }
+
 .settingsGrid {
   display: flex;
   flex-direction: column;

@@ -7,7 +7,7 @@ import { Transport } from '../../shared/Transport';
 import { ScaleSelector } from '../../shared/ScaleSelector';
 import { FunctionSlot } from '../../shared/FunctionSlot';
 import { compileExpression } from '../../../engine/functionEval';
-import { startSequence, stopSequence } from '../../../engine/arpEngine';
+import { startSequence, stopSequence, updateSequenceExpression } from '../../../engine/arpEngine';
 import type { NoteValue } from '../../../types';
 import styles from './FunctionView.module.css';
 
@@ -39,6 +39,15 @@ export function FunctionView() {
     const { error } = compileExpression(expressionInput);
     setEvalError(error);
     if (!error) updateFunction(fn.id, { expression: expressionInput });
+  }, [fn, expressionInput, updateFunction]);
+
+  const handleApply = useCallback(() => {
+    if (!fn) return;
+    const { compiled, error } = compileExpression(expressionInput);
+    setEvalError(error);
+    if (error || !compiled) return;
+    updateFunction(fn.id, { expression: expressionInput });
+    updateSequenceExpression(SEQ_ID, compiled);
   }, [fn, expressionInput, updateFunction]);
 
   const handlePlay = useCallback(() => {
@@ -126,11 +135,16 @@ export function FunctionView() {
             value={expressionInput}
             onChange={(e) => setExpressionInput(e.target.value)}
             onBlur={handleExpressionCommit}
-            onKeyDown={(e) => e.key === 'Enter' && handleExpressionCommit()}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleApply(); } }}
             placeholder="sin(x) * 3"
             spellCheck={false}
           />
           {evalError && <span className={styles.error} title={evalError}>⚠</span>}
+          <button
+            className={styles.applyBtn}
+            onClick={handleApply}
+            title="Apply equation to engine"
+          >Apply</button>
         </div>
 
         <div className={styles.settingsGrid}>

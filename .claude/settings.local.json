@@ -5,7 +5,8 @@
       "Bash(Select-Object Name, Attributes)",
       "Bash(npm create *)",
       "Bash(npm install *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npm run *)"
     ]
   }
 }
