@@ -2,14 +2,16 @@ import { useTransportStore } from '../../../stores/transportStore';
 import styles from './Transport.module.css';
 
 interface TransportProps {
+  playing: boolean;
+  paused: boolean;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
   showLoop?: boolean;
 }
 
-export function Transport({ onPlay, onPause, onStop, showLoop = true }: TransportProps) {
-  const { playing, paused, looping, toggleLoop } = useTransportStore();
+export function Transport({ playing, paused, onPlay, onPause, onStop, showLoop = true }: TransportProps) {
+  const { looping, toggleLoop } = useTransportStore();
 
   return (
     <div className={styles.transport}>

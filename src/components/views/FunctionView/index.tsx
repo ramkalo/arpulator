@@ -21,11 +21,14 @@ const SEQ_ID = 'function-view';
 export function FunctionView() {
   const { topology, activeFunctionId, setActiveFunctionId, updateFunction, addFunction, duplicateFunction, deleteFunction } = useTopologyStore();
   const { selectedOutputId } = useMidiStore();
-  const { playing, currentBpm, looping, play, pause, stop, setPlayheadX, playheadX } = useTransportStore();
+  const { currentBpm, looping } = useTransportStore();
 
   const fn = topology.functions.find((f) => f.id === activeFunctionId) ?? topology.functions[0];
   const [expressionInput, setExpressionInput] = useState(fn?.expression ?? 'sin(x)');
   const [evalError, setEvalError] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [playheadX, setPlayheadX] = useState(fn?.xAxis.domain[0] ?? 0);
 
   // Track current playhead X per-component (updated by the engine callback)
   const playheadXRef = useRef<number>(fn?.xAxis.domain[0] ?? 0);
@@ -73,19 +76,24 @@ export function FunctionView() {
         setPlayheadX(x);
       },
     });
-    play();
-  }, [fn, selectedOutputId, currentBpm, looping, play, setPlayheadX]);
+    setPlaying(true);
+    setPaused(false);
+  }, [fn, selectedOutputId, currentBpm, looping]);
 
   const handlePause = useCallback(() => {
     stopSequence(SEQ_ID, selectedOutputId ?? undefined, fn?.midiChannel);
-    pause();
-  }, [fn, selectedOutputId, pause]);
+    setPlaying(false);
+    setPaused(true);
+  }, [fn, selectedOutputId]);
 
   const handleStop = useCallback(() => {
     stopSequence(SEQ_ID, selectedOutputId ?? undefined, fn?.midiChannel);
-    stop();
-    playheadXRef.current = fn?.xAxis.domain[0] ?? 0;
-  }, [fn, selectedOutputId, stop]);
+    setPlaying(false);
+    setPaused(false);
+    const domainStart = fn?.xAxis.domain[0] ?? 0;
+    playheadXRef.current = domainStart;
+    setPlayheadX(domainStart);
+  }, [fn, selectedOutputId]);
 
   useEffect(() => () => { stopSequence(SEQ_ID); }, []);
 
@@ -255,7 +263,7 @@ export function FunctionView() {
         </div>
 
         <div className={styles.transportBar}>
-          <Transport onPlay={handlePlay} onPause={handlePause} onStop={handleStop} />
+          <Transport playing={playing} paused={paused} onPlay={handlePlay} onPause={handlePause} onStop={handleStop} />
           {!selectedOutputId && <span className={styles.noOutputWarning}>Select a MIDI output in the header to play</span>}
         </div>
           </div>{/* controlsPanel */}

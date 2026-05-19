@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -22,13 +22,47 @@ import { useTransportStore } from '../../../stores/transportStore';
 import { FunctionSlot } from '../../shared/FunctionSlot';
 import { Transport } from '../../shared/Transport';
 import { compileExpression } from '../../../engine/functionEval';
-import { startSequence, stopSequence } from '../../../engine/arpEngine';
+import { startSequence, stopSequence, getCurrentX } from '../../../engine/arpEngine';
 import type { FunctionDef } from '../../../types';
 import styles from './ChainView.module.css';
 
 const SEQ_ID = 'chain-view';
+const LIB_DRAG_TYPE = 'application/arpulator-fn';
 
-function SortableFunctionSlot({ fn, chainId, index }: { fn: FunctionDef; chainId: string; index: number }) {
+function ChainPlayhead({ seqId, domain, color }: { seqId: string; domain: [number, number]; color: string }) {
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let rafId: number;
+    const [xMin, xMax] = domain;
+    const span = xMax - xMin;
+
+    const tick = () => {
+      const x = getCurrentX(seqId);
+      const bar = barRef.current;
+      if (bar) {
+        if (x !== null && x >= xMin && x < xMax) {
+          bar.style.left = `${((x - xMin) / span) * 100}%`;
+          bar.style.opacity = '1';
+        } else {
+          bar.style.opacity = '0';
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [seqId, domain]);
+
+  return (
+    <div className={styles.playheadOverlay}>
+      <div ref={barRef} className={styles.playheadBar} style={{ background: color }} />
+    </div>
+  );
+}
+
+function SortableFunctionSlot({ fn, chainId, index, playing }: { fn: FunctionDef; chainId: string; index: number; playing: boolean }) {
   const { removeFunctionFromChain } = useTopologyStore();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: fn.id + '-' + index });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -41,6 +75,9 @@ function SortableFunctionSlot({ fn, chainId, index }: { fn: FunctionDef; chainId
         dragHandleProps={{ ...attributes, ...listeners }}
         onRemove={() => removeFunctionFromChain(chainId, index)}
       />
+      {playing && (
+        <ChainPlayhead seqId={`${SEQ_ID}-${index}`} domain={fn.xAxis.domain} color={fn.color} />
+      )}
     </div>
   );
 }
@@ -48,25 +85,29 @@ function SortableFunctionSlot({ fn, chainId, index }: { fn: FunctionDef; chainId
 export function ChainView() {
   const { topology, activeChainId, setActiveChainId, addChain, duplicateChain, deleteChain, updateChain, addFunctionToChain, reorderChainFunctions } = useTopologyStore();
   const { selectedOutputId } = useMidiStore();
-  const { currentBpm, looping, play, pause, stop } = useTransportStore();
+  const { currentBpm, looping } = useTransportStore();
+  const [playing, setPlaying] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [slotDragOver, setSlotDragOver] = useState(false);
+  const [previewChannel, setPreviewChannel] = useState(1);
+  const chainLoopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chain = topology.chains.find((c) => c.id === activeChainId) ?? topology.chains[0];
-  const [showPicker, setShowPicker] = useState(false);
-  const [previewChannel, setPreviewChannel] = useState(1);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Chains play each function as a parallel continuous sequence on the preview channel.
-  const handlePlay = useCallback(() => {
-    if (!chain || !selectedOutputId) return;
+  const startChain = useCallback(() => {
+    if (!chain || !selectedOutputId) return 0;
+    let offsetSec = 0;
     chain.functionIds.forEach((fnId, i) => {
       const fn = topology.functions.find((f) => f.id === fnId);
       if (!fn) return;
       const { compiled, error } = compileExpression(fn.expression);
       if (error || !compiled) return;
+      const fnDuration = fn.xAxis.domain[1] - fn.xAxis.domain[0];
       startSequence({
         id: `${SEQ_ID}-${i}`,
         expression: fn.expression,
@@ -75,26 +116,47 @@ export function ChainView() {
         midiChannel: previewChannel,
         bpm: currentBpm,
         domain: fn.xAxis.domain,
-        looping,
+        looping: false,
         oneShotDuration: fn.oneShotDuration,
         velocity: fn.velocity,
         scale: fn.yAxis.scale,
         rootNote: fn.yAxis.rootNote,
+        startOffsetSec: offsetSec,
       });
+      offsetSec += fnDuration;
     });
-    play();
-  }, [chain, selectedOutputId, topology.functions, previewChannel, currentBpm, looping, play]);
+    return offsetSec;
+  }, [chain, selectedOutputId, topology.functions, previewChannel, currentBpm]);
+
+  const handlePlay = useCallback(() => {
+    if (!chain || !selectedOutputId) return;
+    if (chainLoopTimerRef.current) clearTimeout(chainLoopTimerRef.current);
+    const totalSec = startChain();
+    setPlaying(true);
+    setPaused(false);
+
+    if (looping && totalSec > 0) {
+      const scheduleLoop = (delaySec: number) => {
+        chainLoopTimerRef.current = setTimeout(() => {
+          startChain();
+          scheduleLoop(totalSec);
+        }, delaySec * 1000);
+      };
+      scheduleLoop(totalSec);
+    }
+  }, [chain, selectedOutputId, looping, startChain]);
 
   const stopAll = useCallback(() => {
+    if (chainLoopTimerRef.current) { clearTimeout(chainLoopTimerRef.current); chainLoopTimerRef.current = null; }
     if (!chain) return;
     chain.functionIds.forEach((_, i) => stopSequence(`${SEQ_ID}-${i}`, selectedOutputId ?? undefined, previewChannel));
   }, [chain, selectedOutputId, previewChannel]);
 
-  const handlePause = useCallback(() => { stopAll(); pause(); }, [stopAll, pause]);
-  const handleStop = useCallback(() => { stopAll(); stop(); }, [stopAll, stop]);
+  const handlePause = useCallback(() => { stopAll(); setPlaying(false); setPaused(true); }, [stopAll]);
+  const handleStop = useCallback(() => { stopAll(); setPlaying(false); setPaused(false); }, [stopAll]);
 
   useEffect(() => () => {
-    // cleanup all possible chain slot IDs
+    if (chainLoopTimerRef.current) clearTimeout(chainLoopTimerRef.current);
     for (let i = 0; i < 16; i++) stopSequence(`${SEQ_ID}-${i}`);
   }, []);
 
@@ -110,9 +172,18 @@ export function ChainView() {
     reorderChainFunctions(chain.id, reordered);
   };
 
+  const handleSlotDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setSlotDragOver(false);
+    if (!chain || chain.functionIds.length >= 16) return;
+    const fnId = e.dataTransfer.getData(LIB_DRAG_TYPE);
+    if (!fnId) return;
+    addFunctionToChain(chain.id, fnId);
+  };
+
   return (
     <div className={styles.layout}>
-      {/* Sidebar */}
+      {/* Left sidebar — chain list */}
       <aside className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <span className={styles.sidebarTitle}>Chains</span>
@@ -135,7 +206,7 @@ export function ChainView() {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* Main editor */}
       <main className={styles.main}>
         {!chain ? (
           <div className={styles.empty}>
@@ -156,7 +227,12 @@ export function ChainView() {
               </div>
             </div>
 
-            <div className={styles.slotArea}>
+            <div
+              className={`${styles.slotArea} ${slotDragOver ? styles.slotDragOver : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setSlotDragOver(true); }}
+              onDragLeave={() => setSlotDragOver(false)}
+              onDrop={handleSlotDrop}
+            >
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext
                   items={chain.functionIds.map((fid, i) => fid + '-' + i)}
@@ -167,52 +243,19 @@ export function ChainView() {
                       const fn = topology.functions.find((f) => f.id === fnId);
                       if (!fn) return null;
                       return (
-                        <SortableFunctionSlot key={fnId + '-' + idx} fn={fn} chainId={chain.id} index={idx} />
+                        <SortableFunctionSlot key={fnId + '-' + idx} fn={fn} chainId={chain.id} index={idx} playing={playing} />
                       );
                     })}
-                    {chain.functionIds.length < 16 && (
-                      <button className={styles.addSlotBtn} onClick={() => setShowPicker(true)} title="Add Function">
-                        + Add
-                      </button>
+                    {chain.functionIds.length === 0 && (
+                      <div className={styles.slotEmptyHint}>← drag functions here from the library</div>
                     )}
                   </div>
                 </SortableContext>
               </DndContext>
             </div>
 
-            {chain.functionIds.length === 0 && (
-              <div className={styles.hintMsg}>Drag functions here from the picker, or click "+ Add"</div>
-            )}
-
-            {/* Function picker modal */}
-            {showPicker && (
-              <div className={styles.pickerOverlay} onClick={() => setShowPicker(false)}>
-                <div className={styles.picker} onClick={(e) => e.stopPropagation()}>
-                  <h3 className={styles.pickerTitle}>Pick a Function</h3>
-                  <div className={styles.pickerList}>
-                    {topology.functions.map((fn) => (
-                      <div
-                        key={fn.id}
-                        className={styles.pickerItem}
-                        style={{ borderLeftColor: fn.color }}
-                        onClick={() => { addFunctionToChain(chain.id, fn.id); setShowPicker(false); }}
-                      >
-                        <span className={styles.pickerName}>{fn.name}</span>
-                        <span className={styles.pickerExpr}>{fn.expression}</span>
-                      </div>
-                    ))}
-                    {topology.functions.length === 0 && (
-                      <div className={styles.emptyMsg}>No functions defined. Go to Function view first.</div>
-                    )}
-                  </div>
-                  <button className={styles.pickerClose} onClick={() => setShowPicker(false)}>Cancel</button>
-                </div>
-              </div>
-            )}
-
-            {/* Transport */}
             <div className={styles.transportBar}>
-              <Transport onPlay={handlePlay} onPause={handlePause} onStop={handleStop} />
+              <Transport playing={playing} paused={paused} onPlay={handlePlay} onPause={handlePause} onStop={handleStop} />
               <div className={styles.channelRow}>
                 <label className={styles.label}>Preview Ch</label>
                 <select className={styles.select} value={previewChannel} onChange={(e) => setPreviewChannel(+e.target.value)}>
@@ -225,6 +268,32 @@ export function ChainView() {
           </>
         )}
       </main>
+
+      {/* Right panel — function library */}
+      <aside className={styles.fnLibrary}>
+        <div className={styles.sidebarHeader}>
+          <span className={styles.sidebarTitle}>Functions</span>
+        </div>
+        <div className={styles.fnLibList}>
+          {topology.functions.length === 0 && (
+            <div className={styles.emptyMsg}>No functions yet. Create one in Function view.</div>
+          )}
+          {topology.functions.map((fn) => (
+            <div
+              key={fn.id}
+              className={styles.fnLibItem}
+              style={{ borderLeftColor: fn.color }}
+              draggable
+              onDragStart={(e) => e.dataTransfer.setData(LIB_DRAG_TYPE, fn.id)}
+              onClick={() => { if (chain && chain.functionIds.length < 16) addFunctionToChain(chain.id, fn.id); }}
+              title={chain ? (chain.functionIds.length >= 16 ? 'Chain is full' : 'Click to add, or drag into chain') : ''}
+            >
+              <span className={styles.fnLibName}>{fn.name}</span>
+              <span className={styles.fnLibExpr}>{fn.expression}</span>
+            </div>
+          ))}
+        </div>
+      </aside>
     </div>
   );
 }

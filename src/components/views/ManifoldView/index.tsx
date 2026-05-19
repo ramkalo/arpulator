@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useTopologyStore } from '../../../stores/topologyStore';
 import { useMidiStore } from '../../../stores/midiStore';
 import { useTransportStore } from '../../../stores/transportStore';
@@ -10,9 +10,11 @@ import styles from './ManifoldView.module.css';
 export function ManifoldView() {
   const { topology, setManifoldRow, clearManifoldRow, setGlobalTempo } = useTopologyStore();
   const { selectedOutputId } = useMidiStore();
-  const { playing, currentBpm, looping, play, pause, stop } = useTransportStore();
-
+  const { currentBpm, looping } = useTransportStore();
+  const [playing, setPlaying] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [dragOver, setDragOver] = useState<number | null>(null);
+  const manifoldLoopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const startRowSequence = useCallback((row: typeof topology.manifold[0], seqIdSuffix: string) => {
     if (!selectedOutputId) return;
@@ -51,24 +53,33 @@ export function ManifoldView() {
 
   const handlePlay = useCallback(() => {
     if (!selectedOutputId) return;
+    if (manifoldLoopTimerRef.current) clearTimeout(manifoldLoopTimerRef.current);
     for (const row of topology.manifold) {
       if (row.itemType === 'empty' || !row.itemId) continue;
       startRowSequence(row, `ch${row.midiChannel}`);
     }
-    play();
-  }, [topology, selectedOutputId, startRowSequence, play]);
+    setPlaying(true);
+    setPaused(false);
+  }, [topology, selectedOutputId, startRowSequence]);
 
   const handlePause = useCallback(() => {
+    if (manifoldLoopTimerRef.current) { clearTimeout(manifoldLoopTimerRef.current); manifoldLoopTimerRef.current = null; }
     stopAllSequences(selectedOutputId ?? undefined);
-    pause();
-  }, [selectedOutputId, pause]);
+    setPlaying(false);
+    setPaused(true);
+  }, [selectedOutputId]);
 
   const handleStop = useCallback(() => {
+    if (manifoldLoopTimerRef.current) { clearTimeout(manifoldLoopTimerRef.current); manifoldLoopTimerRef.current = null; }
     stopAllSequences(selectedOutputId ?? undefined);
-    stop();
-  }, [selectedOutputId, stop]);
+    setPlaying(false);
+    setPaused(false);
+  }, [selectedOutputId]);
 
-  useEffect(() => () => { stopAllSequences(); }, []);
+  useEffect(() => () => {
+    if (manifoldLoopTimerRef.current) clearTimeout(manifoldLoopTimerRef.current);
+    stopAllSequences();
+  }, []);
 
   const handleDrop = (channel: number, e: React.DragEvent) => {
     e.preventDefault();
@@ -92,7 +103,7 @@ export function ManifoldView() {
             onChange={(e) => { setGlobalTempo(+e.target.value); useTransportStore.getState().setBpm(+e.target.value); }}
           />
         </div>
-        <Transport onPlay={handlePlay} onPause={handlePause} onStop={handleStop} showLoop />
+        <Transport playing={playing} paused={paused} onPlay={handlePlay} onPause={handlePause} onStop={handleStop} showLoop />
         {!selectedOutputId && <span className={styles.warn}>Select MIDI output in header</span>}
       </div>
 

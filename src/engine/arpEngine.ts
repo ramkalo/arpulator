@@ -185,6 +185,7 @@ export interface StartSequenceOptions {
   velocity: number;
   scale: ScaleDefinition;
   rootNote: number;
+  startOffsetSec?: number;
   onXUpdate?: (x: number) => void;
 }
 
@@ -192,6 +193,7 @@ export function startSequence(opts: StartSequenceOptions) {
   const ctx = getAudioContext();
 
   const begin = () => {
+    const startTime = ctx.currentTime + 0.05 + (opts.startOffsetSec ?? 0);
     const seq: ContinuousSequence = {
       id: opts.id,
       compiled: opts.compiled,
@@ -204,9 +206,9 @@ export function startSequence(opts: StartSequenceOptions) {
       velocity: opts.velocity,
       scale: opts.scale,
       rootNote: opts.rootNote,
-      timeOrigin: ctx.currentTime + 0.05,
+      timeOrigin: startTime,
       xOrigin: opts.domain[0],
-      scheduledUpTo: ctx.currentTime + 0.05,
+      scheduledUpTo: startTime,
       onXUpdate: opts.onXUpdate,
     };
     sequences.set(opts.id, seq);
