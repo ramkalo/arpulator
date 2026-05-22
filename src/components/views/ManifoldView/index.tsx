@@ -5,19 +5,34 @@ import { useTransportStore } from '../../../stores/transportStore';
 import { Transport } from '../../shared/Transport';
 import { compileExpression } from '../../../engine/functionEval';
 import { startSequence, stopAllSequences } from '../../../engine/arpEngine';
+import { getMidiOutput, sendAllNotesOff } from '../../../engine/midiEngine';
 import styles from './ManifoldView.module.css';
 
 export function ManifoldView() {
-  const { topology, setManifoldRow, clearManifoldRow, setGlobalTempo } = useTopologyStore();
-  const { selectedOutputId } = useMidiStore();
+  const { topology, setManifoldRow, clearManifoldRow, updateManifoldRow, setGlobalTempo } = useTopologyStore();
+  const { selectedOutputId, outputs } = useMidiStore();
   const { currentBpm, looping } = useTransportStore();
   const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const manifoldLoopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const getRowOutputId = useCallback((row: typeof topology.manifold[0]) =>
+    row.outputDeviceId ?? selectedOutputId, [selectedOutputId]);
+
+  const getActiveOutputIds = useCallback(() => {
+    const ids = new Set<string>();
+    for (const row of topology.manifold) {
+      if (row.itemType === 'empty') continue;
+      const id = row.outputDeviceId ?? selectedOutputId;
+      if (id) ids.add(id);
+    }
+    return [...ids];
+  }, [topology.manifold, selectedOutputId]);
+
   const startRowSequence = useCallback((row: typeof topology.manifold[0], seqIdSuffix: string) => {
-    if (!selectedOutputId) return;
+    const outputId = getRowOutputId(row);
+    if (!outputId) return;
     const startFn = (fn: typeof topology.functions[0], seqId: string) => {
       const { compiled, error } = compileExpression(fn.expression);
       if (error || !compiled) return;
@@ -25,8 +40,8 @@ export function ManifoldView() {
         id: seqId,
         expression: fn.expression,
         compiled,
-        midiOutputId: selectedOutputId,
-        midiChannel: row.midiChannel,
+        midiOutputId: outputId,
+        midiChannel: row.outputChannel,
         bpm: currentBpm,
         domain: fn.xAxis.domain,
         looping,
@@ -49,10 +64,10 @@ export function ManifoldView() {
         });
       }
     }
-  }, [topology, selectedOutputId, currentBpm, looping]);
+  }, [topology, getRowOutputId, currentBpm, looping]);
 
   const handlePlay = useCallback(() => {
-    if (!selectedOutputId) return;
+    if (!selectedOutputId && getActiveOutputIds().length === 0) return;
     if (manifoldLoopTimerRef.current) clearTimeout(manifoldLoopTimerRef.current);
     for (const row of topology.manifold) {
       if (row.itemType === 'empty' || !row.itemId) continue;
@@ -60,21 +75,29 @@ export function ManifoldView() {
     }
     setPlaying(true);
     setPaused(false);
-  }, [topology, selectedOutputId, startRowSequence]);
+  }, [topology, selectedOutputId, startRowSequence, getActiveOutputIds]);
+
+  const stopAndSilence = useCallback(() => {
+    stopAllSequences();
+    for (const id of getActiveOutputIds()) {
+      const output = getMidiOutput(id);
+      if (output) sendAllNotesOff(output);
+    }
+  }, [getActiveOutputIds]);
 
   const handlePause = useCallback(() => {
     if (manifoldLoopTimerRef.current) { clearTimeout(manifoldLoopTimerRef.current); manifoldLoopTimerRef.current = null; }
-    stopAllSequences(selectedOutputId ?? undefined);
+    stopAndSilence();
     setPlaying(false);
     setPaused(true);
-  }, [selectedOutputId]);
+  }, [stopAndSilence]);
 
   const handleStop = useCallback(() => {
     if (manifoldLoopTimerRef.current) { clearTimeout(manifoldLoopTimerRef.current); manifoldLoopTimerRef.current = null; }
-    stopAllSequences(selectedOutputId ?? undefined);
+    stopAndSilence();
     setPlaying(false);
     setPaused(false);
-  }, [selectedOutputId]);
+  }, [stopAndSilence]);
 
   useEffect(() => () => {
     if (manifoldLoopTimerRef.current) clearTimeout(manifoldLoopTimerRef.current);
@@ -156,7 +179,29 @@ export function ManifoldView() {
               onDragLeave={() => setDragOver(null)}
               onDrop={(e) => handleDrop(row.midiChannel, e)}
             >
-              <div className={styles.chLabel}>Ch {row.midiChannel}</div>
+              <div className={styles.rowControls}>
+                <select
+                  className={styles.rowSelect}
+                  value={row.outputDeviceId ?? ''}
+                  onChange={(e) => updateManifoldRow(row.midiChannel, { outputDeviceId: e.target.value || null })}
+                  title="MIDI output device"
+                >
+                  <option value="">Global</option>
+                  {outputs.map((o) => (
+                    <option key={o.id} value={o.id}>{o.name}</option>
+                  ))}
+                </select>
+                <select
+                  className={styles.rowSelect}
+                  value={row.outputChannel}
+                  onChange={(e) => updateManifoldRow(row.midiChannel, { outputChannel: +e.target.value })}
+                  title="MIDI channel"
+                >
+                  {Array.from({ length: 16 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>Ch {i + 1}</option>
+                  ))}
+                </select>
+              </div>
 
               <div className={styles.rowContent}>
                 {row.itemType === 'empty' && (

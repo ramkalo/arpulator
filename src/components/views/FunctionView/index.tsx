@@ -7,7 +7,7 @@ import { Transport } from '../../shared/Transport';
 import { ScaleSelector } from '../../shared/ScaleSelector';
 import { FunctionSlot } from '../../shared/FunctionSlot';
 import { compileExpression } from '../../../engine/functionEval';
-import { startSequence, stopSequence, updateSequenceExpression } from '../../../engine/arpEngine';
+import { startSequence, stopSequence, updateSequenceExpression, updateSequenceDuration, updateSequenceDomain } from '../../../engine/arpEngine';
 import type { NoteValue } from '../../../types';
 import styles from './FunctionView.module.css';
 
@@ -97,8 +97,6 @@ export function FunctionView() {
 
   useEffect(() => () => { stopSequence(SEQ_ID); }, []);
 
-  if (!fn) return <div className={styles.empty}>No functions. Click + to create one.</div>;
-
   return (
     <div className={styles.layout}>
       {/* Sidebar */}
@@ -109,14 +107,17 @@ export function FunctionView() {
         </div>
         <div className={styles.fnList}>
           {topology.functions.map((f) => (
-            <FunctionSlot key={f.id} fn={f} selected={f.id === fn.id} compact onSelect={() => { setActiveFunctionId(f.id); handleStop(); }} />
+            <FunctionSlot key={f.id} fn={f} selected={fn ? f.id === fn.id : false} compact onSelect={() => { setActiveFunctionId(f.id); handleStop(); }} />
           ))}
         </div>
       </aside>
 
       {/* Main editor */}
       <main className={styles.main}>
-        <div className={styles.topBar}>
+        {!fn ? (
+          <div className={styles.empty}>No functions yet. Click + to create one.</div>
+        ) : (
+        <><div className={styles.topBar}>
           <input className={styles.nameInput} value={fn.name} onChange={(e) => updateFunction(fn.id, { name: e.target.value })} />
           <div className={styles.fnActions}>
             <button className={styles.actionBtn} onClick={() => duplicateFunction(fn.id)} title="Duplicate">⧉</button>
@@ -131,7 +132,10 @@ export function FunctionView() {
               playheadX={playing ? playheadX : undefined}
               playing={playing}
               accentColor={fn.color}
-              onDomainEndChange={(xEnd) => updateFunction(fn.id, { xAxis: { ...fn.xAxis, domain: [0, xEnd] } })}
+              onDomainEndChange={(xEnd) => {
+                updateFunction(fn.id, { xAxis: { ...fn.xAxis, domain: [0, xEnd] } });
+                updateSequenceDomain(SEQ_ID, [0, xEnd]);
+              }}
             />
           </div>
 
@@ -226,6 +230,7 @@ export function FunctionView() {
                   onChange={(e) => {
                     const val = Math.max(1, Math.min(Math.round(+e.target.value), 60));
                     updateFunction(fn.id, { xAxis: { ...fn.xAxis, domain: [0, val] } });
+                    updateSequenceDomain(SEQ_ID, [0, val]);
                   }}
                 />
               </div>
@@ -238,7 +243,11 @@ export function FunctionView() {
             <div className={styles.field}>
               <label className={styles.label}>Gate Duration</label>
               <select className={styles.select} value={fn.oneShotDuration}
-                onChange={(e) => updateFunction(fn.id, { oneShotDuration: e.target.value as NoteValue })}
+                onChange={(e) => {
+                const val = e.target.value as NoteValue;
+                updateFunction(fn.id, { oneShotDuration: val });
+                updateSequenceDuration(SEQ_ID, val, currentBpm);
+              }}
               >
                 {NOTE_VALUES.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
@@ -268,6 +277,7 @@ export function FunctionView() {
         </div>
           </div>{/* controlsPanel */}
         </div>{/* contentRow */}
+        </>)}
       </main>
     </div>
   );

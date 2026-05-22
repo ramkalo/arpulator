@@ -1,4 +1,4 @@
-import type { ScaleDefinition } from '../types';
+import type { ScaleDefinition, CrossingEvent } from '../types';
 import { getMidiOutput, sendNoteOn, sendNoteOff, sendAllNotesOff } from './midiEngine';
 import { findCrossings, noteValueToSeconds } from './functionEval';
 import { scaleDegreeToMidi } from './scales';
@@ -27,6 +27,7 @@ interface ContinuousSequence {
   timeOrigin: number;         // AudioContext.currentTime when playback started
   xOrigin: number;            // X value at timeOrigin (domain[0])
   scheduledUpTo: number;      // AudioContext.currentTime already scheduled through
+  precomputedCrossings: CrossingEvent[]; // sorted by x, computed once at start
   onXUpdate?: (x: number) => void;
 }
 
@@ -90,70 +91,45 @@ function runScheduler() {
     if (windowEnd <= windowStart) continue;
 
     const output = getMidiOutput(seq.midiOutputId);
-
-    // Report playhead X to the store
     seq.onXUpdate?.(audioTimeToX(ctx.currentTime, seq));
 
     const [xMin, xMax] = seq.domain;
     const span = xMax - xMin;
-    const spx = secPerXUnit(seq);
 
-    // Build X windows to search. For looping sequences, the time window may span
-    // a domain wrap — split at the boundary.
-    type XWindow = { xStart: number; xEnd: number; timeOffset: number };
-    const windows: XWindow[] = [];
+    // Crossings are precomputed. For each crossing at domain x:
+    //   audioTime(cycle k) = timeOrigin + (crossing.x - xMin) + k * span
+    // We find all (crossing, k) pairs whose audioTime falls in [windowStart, windowEnd].
+    for (const crossing of seq.precomputedCrossings) {
+      const base = seq.timeOrigin + (crossing.x - xMin);
 
-    if (!seq.looping) {
-      windows.push({
-        xStart: audioTimeToX(windowStart, seq),
-        xEnd: audioTimeToX(windowEnd, seq),
-        timeOffset: 0,
-      });
-    } else {
-      // Walk through the time window, splitting on domain wraps
-      let t = windowStart;
-      while (t < windowEnd) {
-        const xAtT = seq.xOrigin + (t - seq.timeOrigin) / spx;
-        const rawSpansDone = Math.floor((xAtT - xMin) / span);
-        const cycleStartX = xMin + rawSpansDone * span;
-        const cycleEndAudioTime = seq.timeOrigin + (cycleStartX + span - seq.xOrigin) * spx;
-
-        const tEnd = Math.min(windowEnd, cycleEndAudioTime);
-        const xStart = xMin + ((xAtT - xMin) % span + span) % span;
-        const xDelta = (tEnd - t) / spx;
-        const xEnd = Math.min(xStart + xDelta, xMax);
-
-        windows.push({ xStart, xEnd, timeOffset: t - windowStart });
-        t = cycleEndAudioTime;
-      }
-    }
-
-    for (const win of windows) {
-      const totalSamples = Math.max(10, Math.round(SAMPLE_RESOLUTION * (win.xEnd - win.xStart)));
-      const isAtDomainStart = Math.abs(win.xStart - xMin) < 1e-9;
-      const crossings = findCrossings(seq.compiled, win.xStart, win.xEnd, totalSamples, isAtDomainStart);
-
-      for (const crossing of crossings) {
-        if (crossing.x >= xMax - 1e-9) continue; // suppress note at domain end
-        const audioTime = xToAudioTime(crossing.x, seq, windowStart + win.timeOffset);
-        if (audioTime < windowStart - 1e-9 || audioTime > windowEnd + 1e-9) continue;
-
+      if (!seq.looping) {
+        if (base < windowStart - 1e-9 || base > windowEnd + 1e-9) continue;
+        if (crossing.x >= xMax - 1e-9) continue;
         const midiNote = scaleDegreeToMidi(crossing.toDegree, seq.scale, seq.rootNote);
-        const noteOnMs = perfNow + (audioTime - ctx.currentTime) * 1000;
-
+        const noteOnMs = perfNow + (base - ctx.currentTime) * 1000;
         if (!output) continue;
-
-        const noteOffMs = noteOnMs + seq.oneShotDurationSec * 1000;
         sendNoteOn(output, seq.midiChannel, midiNote, seq.velocity, noteOnMs);
-        sendNoteOff(output, seq.midiChannel, midiNote, noteOffMs);
+        sendNoteOff(output, seq.midiChannel, midiNote, noteOnMs + seq.oneShotDurationSec * 1000);
+      } else {
+        if (crossing.x >= xMax - 1e-9) continue;
+        const kMin = Math.max(0, Math.ceil((windowStart - 1e-9 - base) / span));
+        const kMax = Math.floor((windowEnd + 1e-9 - base) / span);
+        for (let k = kMin; k <= kMax; k++) {
+          const audioTime = base + k * span;
+          if (audioTime < windowStart - 1e-9 || audioTime > windowEnd + 1e-9) continue;
+          const midiNote = scaleDegreeToMidi(crossing.toDegree, seq.scale, seq.rootNote);
+          const noteOnMs = perfNow + (audioTime - ctx.currentTime) * 1000;
+          if (!output) continue;
+          sendNoteOn(output, seq.midiChannel, midiNote, seq.velocity, noteOnMs);
+          sendNoteOff(output, seq.midiChannel, midiNote, noteOnMs + seq.oneShotDurationSec * 1000);
+        }
       }
     }
 
     seq.scheduledUpTo = windowEnd;
 
-    // Stop non-looping sequences that have passed the domain end
     if (!seq.looping) {
-      const xNow = seq.xOrigin + (windowEnd - seq.timeOrigin) / spx;
+      const xNow = xMin + (windowEnd - seq.timeOrigin);
       if (xNow >= xMax) sequences.delete(seq.id);
     }
   }
@@ -194,6 +170,7 @@ export function startSequence(opts: StartSequenceOptions) {
 
   const begin = () => {
     const startTime = ctx.currentTime + 0.05 + (opts.startOffsetSec ?? 0);
+    const precomputeRes = Math.max(1000, Math.round(SAMPLE_RESOLUTION * (opts.domain[1] - opts.domain[0])));
     const seq: ContinuousSequence = {
       id: opts.id,
       compiled: opts.compiled,
@@ -209,6 +186,7 @@ export function startSequence(opts: StartSequenceOptions) {
       timeOrigin: startTime,
       xOrigin: opts.domain[0],
       scheduledUpTo: startTime,
+      precomputedCrossings: findCrossings(opts.compiled, opts.domain[0], opts.domain[1], precomputeRes, true),
       onXUpdate: opts.onXUpdate,
     };
     sequences.set(opts.id, seq);
@@ -266,10 +244,30 @@ export function getCurrentX(id: string): number | null {
   return audioTimeToX(getAudioContext().currentTime, seq);
 }
 
+export function updateSequenceDomain(id: string, domain: [number, number]) {
+  const seq = sequences.get(id);
+  if (!seq) return;
+  const ctx = getAudioContext();
+  seq.domain = domain;
+  seq.scheduledUpTo = ctx.currentTime;
+  const precomputeRes = Math.max(1000, Math.round(SAMPLE_RESOLUTION * (domain[1] - domain[0])));
+  seq.precomputedCrossings = findCrossings(seq.compiled, domain[0], domain[1], precomputeRes, true);
+}
+
+export function updateSequenceDuration(id: string, oneShotDuration: string, bpm: number) {
+  const seq = sequences.get(id);
+  if (!seq) return;
+  seq.oneShotDurationSec = noteValueToSeconds(oneShotDuration, bpm);
+}
+
 export function updateSequenceExpression(id: string, compiled: unknown) {
   const seq = sequences.get(id);
   if (!seq) return;
   const ctx = getAudioContext();
-  seq.compiled = compiled;
-  seq.scheduledUpTo = ctx.currentTime; // reschedule immediately with new expression
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  seq.compiled = compiled as any;
+  seq.scheduledUpTo = ctx.currentTime;
+  const precomputeRes = Math.max(1000, Math.round(SAMPLE_RESOLUTION * (seq.domain[1] - seq.domain[0])));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  seq.precomputedCrossings = findCrossings(compiled as any, seq.domain[0], seq.domain[1], precomputeRes, true);
 }

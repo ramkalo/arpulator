@@ -13,6 +13,8 @@ const DEFAULT_FUNCTION_COLORS = [
 function makeDefaultManifold(): ManifoldRow[] {
   return Array.from({ length: 16 }, (_, i) => ({
     midiChannel: i + 1,
+    outputChannel: i + 1,
+    outputDeviceId: null,
     itemType: 'empty' as const,
     itemId: null,
   }));
@@ -83,6 +85,7 @@ interface TopologyStore {
   // Manifold
   setManifoldRow: (channel: number, itemType: ManifoldRow['itemType'], itemId: string | null) => void;
   clearManifoldRow: (channel: number) => void;
+  updateManifoldRow: (channel: number, patch: Partial<Pick<ManifoldRow, 'outputChannel' | 'outputDeviceId'>>) => void;
 }
 
 export const useTopologyStore = create<TopologyStore>()(
@@ -267,11 +270,21 @@ export const useTopologyStore = create<TopologyStore>()(
               ),
             },
           })),
+
+        updateManifoldRow: (channel, patch) =>
+          set((s) => ({
+            topology: {
+              ...s.topology,
+              manifold: s.topology.manifold.map((r) =>
+                r.midiChannel === channel ? { ...r, ...patch } : r
+              ),
+            },
+          })),
       };
     },
     {
       name: 'arpulator-topology',
-      version: 5,
+      version: 6,
       migrate: (state: unknown) => {
         const s = state as { topology?: Topology };
         if (!s?.topology) return state;
@@ -294,7 +307,13 @@ export const useTopologyStore = create<TopologyStore>()(
             color: f.color ?? '#f59e0b',
           };
         });
-        return { ...s, topology: { ...s.topology, functions: fns } };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const manifold = (s.topology.manifold ?? []).map((r: any) => ({
+          ...r,
+          outputChannel: r.outputChannel ?? r.midiChannel,
+          outputDeviceId: r.outputDeviceId ?? null,
+        }));
+        return { ...s, topology: { ...s.topology, functions: fns, manifold } };
       },
     }
   )

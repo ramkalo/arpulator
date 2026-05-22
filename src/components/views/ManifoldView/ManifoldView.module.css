@@ -23,6 +23,11 @@
 
 .chLabel { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); width: 36px; flex-shrink: 0; }
 
+.rowControls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.rowSelect { font-family: var(--font-mono); font-size: 11px; background: var(--input-bg); border: var(--input-border); color: var(--text); border-radius: 3px; padding: 2px 4px; cursor: pointer; }
+.rowSelect:first-child { max-width: 130px; }
+.rowSelect:last-child { width: 62px; }
+
 .rowContent { flex: 1; min-width: 0; }
 
 .emptyDrop { font-family: var(--font-mono); font-size: 11px; color: #374151; font-style: italic; }

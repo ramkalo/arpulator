@@ -37,15 +37,56 @@ export function compileExpression(expression: string): { compiled: any; error: n
   }
 }
 
-// Detects every integer Y-value crossing in [xStart, xEnd].
+// --- root-finding helpers ---
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function evalAt(compiled: any, x: number): number {
+  try {
+    const r = compiled.evaluate({ x });
+    const v = typeof r === 'number' ? r : Number(r);
+    return isFinite(v) ? v : NaN;
+  } catch { return NaN; }
+}
+
+// Bisect g(x) = f(x) - target on [x0, x1]. Caller guarantees a sign change exists.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function bisect(compiled: any, x0: number, x1: number, target: number): number {
+  let lo = x0, hi = x1;
+  for (let i = 0; i < 52; i++) {
+    const mid = (lo + hi) / 2;
+    if (mid === lo || mid === hi) break;
+    const gMid = evalAt(compiled, mid) - target;
+    if (!isFinite(gMid)) break;
+    const gLo = evalAt(compiled, lo) - target;
+    if (Math.sign(gLo) === Math.sign(gMid)) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Ternary search for a maximum (isMax=true) or minimum on [x0, x1].
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findExtremum(compiled: any, x0: number, x1: number, isMax: boolean): { x: number; y: number } {
+  let lo = x0, hi = x1;
+  for (let i = 0; i < 100; i++) {
+    if (hi - lo < 1e-12) break;
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    const y1 = evalAt(compiled, m1), y2 = evalAt(compiled, m2);
+    if (!isFinite(y1) || !isFinite(y2)) break;
+    if (isMax ? y1 < y2 : y1 > y2) lo = m1; else hi = m2;
+  }
+  const x = (lo + hi) / 2;
+  return { x, y: evalAt(compiled, x) };
+}
+
+// Detects every x in [xStart, xEnd] where f(x) equals an integer, using root-finding.
 //
-// Two-pass approach:
-//   Pass 1 — standard floor-change detection between consecutive samples.
-//   Pass 2 — parabolic peak/trough detection: uses three-point parabola interpolation
-//             to find true local extrema. This catches the case where a function's
-//             amplitude is exactly an integer (e.g. 7*sin(x) touching y=7) but no
-//             sample lands exactly at the peak, so the floor never changes past that
-//             integer in the sample sequence.
+// Pass 1 — crossings: where adjacent samples are in different floor-zones, bisect to find
+//   the precise x where f(x) = n. One event per integer crossed, exact to ~1e-15.
+//
+// Pass 2 — extrema: where a sample is a local max/min, ternary-search for the precise
+//   peak/trough value. If it lands exactly on an integer (within 1e-9 floating-point
+//   tolerance), fire one note. Catches sin(x)*3 peaking at exactly y=3.
 export function findCrossings(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   compiled: any,
@@ -58,97 +99,47 @@ export function findCrossings(
 
   const step = (xEnd - xStart) / sampleResolution;
 
-  // Pre-compute all samples so we can run both passes without re-evaluating.
   const xs = new Array<number>(sampleResolution + 1);
   const ys = new Array<number>(sampleResolution + 1);
   for (let i = 0; i <= sampleResolution; i++) {
     xs[i] = i === sampleResolution ? xEnd : xStart + i * step;
-    try {
-      const r = compiled.evaluate({ x: xs[i] });
-      const v = typeof r === 'number' ? r : Number(r);
-      ys[i] = isFinite(v) ? v : NaN;
-    } catch {
-      ys[i] = NaN;
-    }
+    ys[i] = evalAt(compiled, xs[i]);
   }
 
   const crossings: CrossingEvent[] = [];
 
   if (includeInitial && isFinite(ys[0])) {
-    const rounded = Math.round(ys[0]);
-    if (Math.abs(ys[0] - rounded) < 1e-9) {
-      crossings.push({ x: xs[0], fromDegree: rounded - 1, toDegree: rounded });
-    }
+    const degree = Math.round(ys[0]);
+    crossings.push({ x: xs[0], fromDegree: degree - 1, toDegree: degree });
   }
 
-  // Pass 1: floor-change crossing detection (existing logic).
+  // Pass 1: bisect each integer crossing
   for (let i = 1; i <= sampleResolution; i++) {
-    const prevX = xs[i - 1], prevY = ys[i - 1];
-    const currX = xs[i],     currY = ys[i];
+    const prevY = ys[i - 1], currY = ys[i];
     if (!isFinite(prevY) || !isFinite(currY)) continue;
-
-    const prevFloor = Math.floor(prevY);
-    const currFloor = Math.floor(currY);
+    const prevFloor = Math.floor(prevY), currFloor = Math.floor(currY);
     if (prevFloor === currFloor) continue;
-
-    const lo = Math.max(-127, Math.min(prevFloor, currFloor));
-    const hi = Math.min(127,  Math.max(prevFloor, currFloor));
+    const lo = Math.min(prevFloor, currFloor);
+    const hi = Math.max(prevFloor, currFloor);
     const goingUp = currY > prevY;
-
     for (let n = lo + 1; n <= hi; n++) {
-      const t = (n - prevY) / (currY - prevY);
-      const xCross = prevX + t * (currX - prevX);
-      crossings.push({
-        x: xCross,
-        fromDegree: goingUp ? n - 1 : n,
-        toDegree:   goingUp ? n     : n - 1,
-      });
+      const xCross = bisect(compiled, xs[i - 1], xs[i], n);
+      crossings.push({ x: xCross, fromDegree: goingUp ? n - 1 : n, toDegree: goingUp ? n : n - 1 });
     }
   }
 
-  // Pass 2: parabolic peak/trough detection.
-  // For each local extremum (y1 is max/min of its three-point window), fit a parabola
-  // through (x0,y0),(x1,y1),(x2,y2) and compute the interpolated extremum value yPeak.
-  // If yPeak crosses an integer that the sample y1 didn't reach (floor/ceil differs),
-  // inject crossing events that the sample-based pass missed.
+  // Pass 2: extrema that land exactly on an integer
   for (let i = 1; i < sampleResolution; i++) {
-    const y0 = ys[i - 1], y1 = ys[i], y2 = ys[i + 1];
-    if (!isFinite(y0) || !isFinite(y1) || !isFinite(y2)) continue;
-
-    const isLocalMax = y1 > y0 && y1 > y2;
-    const isLocalMin = y1 < y0 && y1 < y2;
+    const prev = ys[i - 1], curr = ys[i], next = ys[i + 1];
+    if (!isFinite(prev) || !isFinite(curr) || !isFinite(next)) continue;
+    const isLocalMax = curr > prev && curr > next;
+    const isLocalMin = curr < prev && curr < next;
     if (!isLocalMax && !isLocalMin) continue;
-
-    // Three-point parabola: y(t) = y1 + B*t + A*t², t ∈ [-1, 1] centred on x1.
-    const A = (y0 + y2 - 2 * y1) / 2;
-    if (Math.abs(A) < 1e-12) continue; // degenerate (flat)
-
-    const B = (y2 - y0) / 2;
-    const tStar = -B / (2 * A);
-    if (tStar < -1 || tStar > 1) continue; // extremum outside window
-
-    const yPeak = y1 - (B * B) / (4 * A);
-    const xPeak = xs[i] + tStar * step;
-
-    if (isLocalMax) {
-      // Fire for integers that yPeak reaches but the sample y1 didn't.
-      // Add a small epsilon because floating-point parabolic interpolation can land
-      // just below the true peak (e.g. 6.9999999998 instead of 7.0).
-      const sampleFloor = Math.floor(y1);
-      const peakFloor   = Math.min(127, Math.floor(yPeak + 1e-6));
-      for (let n = Math.max(-127, sampleFloor + 1); n <= peakFloor; n++) {
-        // Upward crossing just before the peak, downward crossing just after.
-        crossings.push({ x: xPeak - 1e-9, fromDegree: n - 1, toDegree: n });
-        crossings.push({ x: xPeak + 1e-9, fromDegree: n,     toDegree: n - 1 });
-      }
-    } else {
-      // isLocalMin: fire for integers yPeak descends to but the sample y1 didn't.
-      const sampleCeil = Math.ceil(y1);
-      const peakCeil   = Math.max(-127, Math.ceil(yPeak - 1e-6));
-      for (let n = peakCeil; n < Math.min(128, sampleCeil); n++) {
-        crossings.push({ x: xPeak - 1e-9, fromDegree: n,     toDegree: n - 1 });
-        crossings.push({ x: xPeak + 1e-9, fromDegree: n - 1, toDegree: n });
-      }
+    const { x: xExt, y: yExt } = findExtremum(compiled, xs[i - 1], xs[i + 1], isLocalMax);
+    if (!isFinite(yExt)) continue;
+    const nearest = Math.round(yExt);
+    if (Math.abs(yExt - nearest) < 1e-4) {
+      crossings.push({ x: xExt, fromDegree: nearest - 1, toDegree: nearest });
     }
   }
 

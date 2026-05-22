@@ -46,7 +46,9 @@ export interface Chain {
 export type ManifoldItemType = 'function' | 'chain' | 'empty';
 
 export interface ManifoldRow {
-  midiChannel: number;         // 1-16
+  midiChannel: number;          // slot identifier (1-16), immutable row key
+  outputChannel: number;        // MIDI channel to send on (1-16), user-configurable
+  outputDeviceId: string | null; // output device override; null = use global
   itemType: ManifoldItemType;
   itemId: string | null;
 }
